@@ -1,0 +1,59 @@
+[project]
+name = "hotel-booking"
+version = "0.1.0"
+description = "Hospitality Management Platform — modular Django backend"
+requires-python = ">=3.11"
+dependencies = [
+    "Django~=5.2.0",
+    "djangorestframework~=3.16.0",
+    "django-environ~=0.11.0",
+    "psycopg[binary]~=3.2.0",
+    "drf-spectacular~=0.28.0",
+    "django-filter~=24.3",
+    "celery~=5.4.0",
+    "redis~=5.2.0",
+    "gunicorn~=23.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest~=8.3.0",
+    "pytest-django~=4.10.0",
+    "pytest-cov~=6.0.0",
+    "factory_boy~=3.3.1",
+    "ruff~=0.9.0",
+    "django-debug-toolbar~=4.4.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["config*", "apps*"]
+exclude = ["tests*", "docs*", "docker*", "scripts*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["config", "apps", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.isort]
+# Our own packages sort as first-party, after stdlib and third-party, so
+# isort groups `from apps.*` / `from config.*` in their own section.
+known-first-party = ["apps", "config"]
+
+[tool.ruff.lint.per-file-ignores]
+"config/settings/*.py" = ["F403", "F405"]
+# Auto-generated migrations routinely exceed the line limit — don't fight the generator.
+"*/migrations/*.py" = ["E501"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["tests.py", "test_*.py", "*_tests.py"]
+pythonpath = ["."]
+addopts = "-ra"

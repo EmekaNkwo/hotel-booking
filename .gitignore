@@ -1,0 +1,53 @@
+# ---- Python / Django ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Django
+*.log
+*.pot
+*.sqlite3
+media/
+staticfiles/
+static/
+
+# Testing / coverage / quality
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.ruff_cache/
+.mypy_cache/
+.pyright/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Docker / runtime data
+postgres_data/
+redis_data/
+celerybeat-schedule
+*.pid
+
+# Claude Code local configuration (proxy endpoints, tokens, machine settings)
+.claude/

@@ -1,0 +1,47 @@
+# Compose project name — prefixes containers/volumes/network names.
+name: hotel-booking
+
+services:
+  postgres:
+    # Pin Postgres 16 (DDS/roadmap stack). Dev runs the same major version as
+    # prod so schema behaviour never drifts between environments.
+    image: postgres:16-alpine
+    container_name: hotel_booking_postgres
+    environment:
+      # Dev-only credentials, matching the DATABASE_URL in .env.example
+      # (postgres:postgres@localhost:5432/hotel_booking).
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: hotel_booking
+    ports:
+      # Host 5433 -> container 5432: host 5432 is occupied by a local
+      # "powergrid" stack. Revert to 5432 when that stack is stopped.
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d hotel_booking"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: hotel_booking_redis
+    ports:
+      # Host 6380 -> container 6379: host 6379 is occupied by the same local
+      # "powergrid" stack. Revert to 6379 when that stack is stopped.
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
