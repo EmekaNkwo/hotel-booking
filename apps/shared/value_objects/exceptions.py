@@ -51,6 +51,14 @@ class InvalidPhoneNumber(ValueObjectError):
     """A value is not a structurally valid E.164 phone number."""
 
 
+class InvalidAddress(ValueObjectError):
+    """A value cannot form a valid Address (non-string part, or no parts at all)."""
+
+
+class InvalidGeoLocation(ValueObjectError):
+    """A value cannot form a valid GeoLocation (non-number, or out of bounds)."""
+
+
 class CurrencyMismatch(ValueObjectError):
     """Arithmetic between two Moneys of different currencies.
 

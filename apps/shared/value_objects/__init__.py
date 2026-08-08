@@ -5,34 +5,42 @@ E.g. ``from apps.shared.value_objects import Money``. Internal module layout may
 be reorganized without touching a single consumer import.
 """
 
+from apps.shared.value_objects.address import Address
 from apps.shared.value_objects.currency import Currency
 from apps.shared.value_objects.date_range import DateRange
 from apps.shared.value_objects.email import Email
 from apps.shared.value_objects.exceptions import (
     CurrencyMismatch,
+    InvalidAddress,
     InvalidCurrency,
     InvalidDateRange,
     InvalidEmail,
+    InvalidGeoLocation,
     InvalidGuestCount,
     InvalidMoney,
     InvalidPhoneNumber,
     InvalidStayPeriod,
     ValueObjectError,
 )
+from apps.shared.value_objects.geo_location import GeoLocation
 from apps.shared.value_objects.guest_count import GuestCount
 from apps.shared.value_objects.money import Money
 from apps.shared.value_objects.phone_number import PhoneNumber
 from apps.shared.value_objects.stay_period import StayPeriod
 
 __all__ = [
+    "Address",
     "Currency",
     "CurrencyMismatch",
     "DateRange",
     "Email",
+    "GeoLocation",
     "GuestCount",
+    "InvalidAddress",
     "InvalidCurrency",
     "InvalidDateRange",
     "InvalidEmail",
+    "InvalidGeoLocation",
     "InvalidGuestCount",
     "InvalidMoney",
     "InvalidPhoneNumber",
