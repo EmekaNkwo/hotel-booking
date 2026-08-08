@@ -59,6 +59,10 @@ class InvalidGeoLocation(ValueObjectError):
     """A value cannot form a valid GeoLocation (non-number, or out of bounds)."""
 
 
+class InvalidTimeZone(ValueObjectError):
+    """A value is not a valid IANA timezone identifier."""
+
+
 class CurrencyMismatch(ValueObjectError):
     """Arithmetic between two Moneys of different currencies.
 
