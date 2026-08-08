@@ -24,6 +24,17 @@ class StampProbe(TimeStampedMixin):
         app_label = "shared"
 
 
+def _ensure_table(model):
+    """Create the probe table only if it does not already exist.
+
+    Django's test-database setup may create tables for registered models, so
+    creation must be idempotent to survive any fixture/DB-setup ordering.
+    """
+    if model._meta.db_table not in connection.introspection.table_names():
+        with connection.schema_editor() as editor:
+            editor.create_model(model)
+
+
 @pytest.fixture(scope="module")
 def stamp_probe(django_db_blocker):
     """Create the probe table once, outside any test transaction.
@@ -33,12 +44,12 @@ def stamp_probe(django_db_blocker):
     uses it normally and rolls back only its rows. Yields the model class.
     """
     with django_db_blocker.unblock():
-        with connection.schema_editor() as editor:
-            editor.create_model(StampProbe)
+        _ensure_table(StampProbe)
     yield StampProbe
     with django_db_blocker.unblock():
-        with connection.schema_editor() as editor:
-            editor.delete_model(StampProbe)
+        if StampProbe._meta.db_table in connection.introspection.table_names():
+            with connection.schema_editor() as editor:
+                editor.delete_model(StampProbe)
 
 
 class TestCreation:

@@ -10,6 +10,23 @@ re-declared (and drifting) on every table.
 from django.db import models
 
 
+def status_constraint(
+    field: str, choices: type[models.TextChoices], name: str
+) -> models.CheckConstraint:
+    """A CheckConstraint restricting ``field`` to the closed set ``choices``.
+
+    The E3 recipe's one non-obvious line, packaged so every status column shares
+    the mechanism: ``choices=`` alone is form-level only and enforces nothing in
+    the database — this constraint is what makes the closed set a schema fact
+    that every writer (create, bulk, raw SQL, imports) must respect.
+    The ``choices`` class (the allowed set) and ``name`` are context-owned.
+    """
+    return models.CheckConstraint(
+        condition=models.Q(**{f"{field}__in": choices.values}),
+        name=name,
+    )
+
+
 class TimeStampedMixin(models.Model):
     """Abstract base: ``created_at``/``updated_at`` lifecycle stamps in UTC.
 
