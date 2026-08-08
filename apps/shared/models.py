@@ -28,6 +28,25 @@ def partial_index(
     return models.Index(name=name, fields=fields, condition=condition)
 
 
+def conditional_update(
+    queryset: models.QuerySet, conditions: dict[str, object], values: dict[str, object]
+) -> int:
+    """Run ONE atomic conditional UPDATE over rows matching ``conditions``.
+
+    ``values`` may use ``F()`` expressions (e.g. ``inventory=F("inventory")-1``),
+    which are evaluated in the database, never in Python — so a counter bump
+    cannot lose a concurrent write the way ``obj.field += 1`` can. Returns the
+    number of rows updated: ``0`` means the conditions no longer held (a lost
+    race), letting callers detect and retry without a read-then-write window.
+    Pair a ``version`` in ``conditions`` with ``version=F("version")+1`` in
+    ``values`` for optimistic locking at the queryset level.
+
+    The *mechanism* is kernel; which conditions/values a workflow uses is the
+    owning context's policy.
+    """
+    return queryset.filter(**conditions).update(**values)
+
+
 def status_constraint(
     field: str, choices: type[models.TextChoices], name: str
 ) -> models.CheckConstraint:
