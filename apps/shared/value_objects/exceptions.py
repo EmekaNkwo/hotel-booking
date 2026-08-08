@@ -39,6 +39,10 @@ class InvalidStayPeriod(ValueObjectError):
     """A value cannot form a valid StayPeriod (non-date bounds, or departure not after arrival)."""
 
 
+class InvalidGuestCount(ValueObjectError):
+    """A value cannot form a valid GuestCount (non-int or negative counts, or an empty party)."""
+
+
 class CurrencyMismatch(ValueObjectError):
     """Arithmetic between two Moneys of different currencies.
 
