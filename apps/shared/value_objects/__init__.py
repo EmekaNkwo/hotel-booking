@@ -15,11 +15,13 @@ from apps.shared.value_objects.exceptions import (
     InvalidEmail,
     InvalidGuestCount,
     InvalidMoney,
+    InvalidPhoneNumber,
     InvalidStayPeriod,
     ValueObjectError,
 )
 from apps.shared.value_objects.guest_count import GuestCount
 from apps.shared.value_objects.money import Money
+from apps.shared.value_objects.phone_number import PhoneNumber
 from apps.shared.value_objects.stay_period import StayPeriod
 
 __all__ = [
@@ -33,8 +35,10 @@ __all__ = [
     "InvalidEmail",
     "InvalidGuestCount",
     "InvalidMoney",
+    "InvalidPhoneNumber",
     "InvalidStayPeriod",
     "Money",
+    "PhoneNumber",
     "StayPeriod",
     "ValueObjectError",
 ]

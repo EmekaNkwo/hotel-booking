@@ -47,6 +47,10 @@ class InvalidEmail(ValueObjectError):
     """A value is not a structurally valid email address."""
 
 
+class InvalidPhoneNumber(ValueObjectError):
+    """A value is not a structurally valid E.164 phone number."""
+
+
 class CurrencyMismatch(ValueObjectError):
     """Arithmetic between two Moneys of different currencies.
 
