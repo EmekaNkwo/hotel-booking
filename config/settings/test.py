@@ -20,3 +20,13 @@ CELERY_TASK_EAGER_PROPAGATES = True
 
 # Fast hashing for test passwords (argon2's cost would slow the suite down).
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+# Model tests run against in-memory SQLite so the suite stays hermetic and
+# fast — no Postgres/Docker required for unit-level model tests. Postgres-only
+# behavior (RLS, range types) gets a dedicated integration tier from M2 on.
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": ":memory:",
+    }
+}
