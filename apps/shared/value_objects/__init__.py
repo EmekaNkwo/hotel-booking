@@ -12,9 +12,11 @@ from apps.shared.value_objects.exceptions import (
     InvalidCurrency,
     InvalidDateRange,
     InvalidMoney,
+    InvalidStayPeriod,
     ValueObjectError,
 )
 from apps.shared.value_objects.money import Money
+from apps.shared.value_objects.stay_period import StayPeriod
 
 __all__ = [
     "Currency",
@@ -23,6 +25,8 @@ __all__ = [
     "InvalidCurrency",
     "InvalidDateRange",
     "InvalidMoney",
+    "InvalidStayPeriod",
     "Money",
+    "StayPeriod",
     "ValueObjectError",
 ]

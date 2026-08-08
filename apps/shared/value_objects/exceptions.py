@@ -35,6 +35,10 @@ class InvalidDateRange(ValueObjectError):
     """A value cannot form a valid DateRange (non-date bounds, or end not after start)."""
 
 
+class InvalidStayPeriod(ValueObjectError):
+    """A value cannot form a valid StayPeriod (non-date bounds, or departure not after arrival)."""
+
+
 class CurrencyMismatch(ValueObjectError):
     """Arithmetic between two Moneys of different currencies.
 
