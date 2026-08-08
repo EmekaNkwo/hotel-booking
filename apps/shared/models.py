@@ -12,6 +12,22 @@ from django.db import models
 from apps.shared.exceptions import ConcurrencyError
 
 
+def partial_index(
+    fields: list[str], condition: models.Q, name: str
+) -> models.Index:
+    """A conditional (partial) index covering only rows matching ``condition``.
+
+    A full index covers every row; a partial index covers only the hot subset
+    (e.g. ``created_at`` for rows where ``status='pending'``), so it stays tiny
+    as the table grows — cheaper writes, a cache-hot index, and the same
+    speedup for the queries that touch the subset. Declare it in ``Meta.indexes``;
+    ``makemigrations`` realizes it as ``CREATE INDEX ... WHERE ...``.
+
+    The *mechanism* is kernel; which subset is hot is context policy.
+    """
+    return models.Index(name=name, fields=fields, condition=condition)
+
+
 def status_constraint(
     field: str, choices: type[models.TextChoices], name: str
 ) -> models.CheckConstraint:
