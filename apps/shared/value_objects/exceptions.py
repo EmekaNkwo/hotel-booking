@@ -31,6 +31,10 @@ class InvalidMoney(ValueObjectError):
     """A value cannot be built into a Money (non-int amount, or a non-Currency currency)."""
 
 
+class InvalidDateRange(ValueObjectError):
+    """A value cannot form a valid DateRange (non-date bounds, or end not after start)."""
+
+
 class CurrencyMismatch(ValueObjectError):
     """Arithmetic between two Moneys of different currencies.
 
