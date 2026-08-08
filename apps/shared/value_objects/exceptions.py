@@ -63,6 +63,10 @@ class InvalidTimeZone(ValueObjectError):
     """A value is not a valid IANA timezone identifier."""
 
 
+class InvalidId(ValueObjectError):
+    """A value cannot form a typed id (non-int, or negative)."""
+
+
 class CurrencyMismatch(ValueObjectError):
     """Arithmetic between two Moneys of different currencies.
 

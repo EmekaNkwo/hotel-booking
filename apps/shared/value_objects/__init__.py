@@ -17,6 +17,7 @@ from apps.shared.value_objects.exceptions import (
     InvalidEmail,
     InvalidGeoLocation,
     InvalidGuestCount,
+    InvalidId,
     InvalidMoney,
     InvalidPhoneNumber,
     InvalidStayPeriod,
@@ -29,6 +30,14 @@ from apps.shared.value_objects.money import Money
 from apps.shared.value_objects.phone_number import PhoneNumber
 from apps.shared.value_objects.stay_period import StayPeriod
 from apps.shared.value_objects.time_zone_id import TimeZoneId
+from apps.shared.value_objects.typed_ids import (
+    EntityId,
+    GuestId,
+    PropertyId,
+    RoomTypeId,
+    TenantId,
+    UserId,
+)
 
 __all__ = [
     "Address",
@@ -36,21 +45,28 @@ __all__ = [
     "CurrencyMismatch",
     "DateRange",
     "Email",
+    "EntityId",
     "GeoLocation",
     "GuestCount",
+    "GuestId",
     "InvalidAddress",
     "InvalidCurrency",
     "InvalidDateRange",
     "InvalidEmail",
     "InvalidGeoLocation",
     "InvalidGuestCount",
+    "InvalidId",
     "InvalidMoney",
     "InvalidPhoneNumber",
     "InvalidStayPeriod",
     "InvalidTimeZone",
     "Money",
     "PhoneNumber",
+    "PropertyId",
+    "RoomTypeId",
     "StayPeriod",
+    "TenantId",
     "TimeZoneId",
+    "UserId",
     "ValueObjectError",
 ]
