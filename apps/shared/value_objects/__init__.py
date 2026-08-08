@@ -7,10 +7,12 @@ be reorganized without touching a single consumer import.
 
 from apps.shared.value_objects.currency import Currency
 from apps.shared.value_objects.date_range import DateRange
+from apps.shared.value_objects.email import Email
 from apps.shared.value_objects.exceptions import (
     CurrencyMismatch,
     InvalidCurrency,
     InvalidDateRange,
+    InvalidEmail,
     InvalidGuestCount,
     InvalidMoney,
     InvalidStayPeriod,
@@ -24,9 +26,11 @@ __all__ = [
     "Currency",
     "CurrencyMismatch",
     "DateRange",
+    "Email",
     "GuestCount",
     "InvalidCurrency",
     "InvalidDateRange",
+    "InvalidEmail",
     "InvalidGuestCount",
     "InvalidMoney",
     "InvalidStayPeriod",

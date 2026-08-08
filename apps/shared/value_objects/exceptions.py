@@ -43,6 +43,10 @@ class InvalidGuestCount(ValueObjectError):
     """A value cannot form a valid GuestCount (non-int or negative counts, or an empty party)."""
 
 
+class InvalidEmail(ValueObjectError):
+    """A value is not a structurally valid email address."""
+
+
 class CurrencyMismatch(ValueObjectError):
     """Arithmetic between two Moneys of different currencies.
 
