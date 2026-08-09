@@ -13,6 +13,7 @@ from django.contrib.auth.models import PermissionsMixin
 from django.db import models
 
 from apps.accounts.managers import UserAccountManager
+from apps.accounts.permissions import is_valid
 from apps.shared.models import (
     TenantScopedMixin,
     TimeStampedMixin,
@@ -156,5 +157,188 @@ class Membership(TimeStampedMixin, VersionedMixin, TenantScopedMixin):
             ),
         ]
 
+    def has_permission(self, permission_code: str) -> bool:
+        """RBAC-as-data authorization check (SDD §7.2, §14.2 chain step 3).
+
+        True when one of this membership's roles carries ``permission_code``.
+        Unknown codes fail closed. The read joins membership_role → role →
+        role_permission; the join tables denormalize the membership's own
+        tenant_id, so the authorization read stays inside the tenant even
+        before RLS lands.
+        """
+        if not is_valid(permission_code):
+            return False
+        return self.roles.filter(
+            role__permissions__permission_code=permission_code
+        ).exists()
+
     def __str__(self) -> str:
         return f"{self.user_account_id} @ tenant {self.tenant_id}"
+
+
+class RoleStatus(models.TextChoices):
+    """Lifecycle of a tenant-scoped role (DDS §1).
+
+    ``retired`` is the soft delete: memberships keep the role reference, so a
+    retired role is never deleted out from under a grant.
+    """
+
+    DRAFT = "draft", "Draft"
+    PUBLISHED = "published", "Published"
+    RETIRED = "retired", "Retired"
+
+
+class Role(TenantScopedMixin, VersionedMixin, TimeStampedMixin):
+    """A named, tenant-scoped permission set (RBAC as data, DDS §1).
+
+    Versioned so permission changes are auditable; ``retired`` (never deleted)
+    so memberships referencing the role stay valid.
+    """
+
+    name = models.CharField(max_length=60)
+    status = models.CharField(
+        max_length=20, choices=RoleStatus.choices, default=RoleStatus.DRAFT
+    )
+
+    objects = TenantScopedManager()
+
+    class Meta:
+        db_table = "role"
+        constraints = [
+            status_constraint("status", RoleStatus, "role_status_valid"),
+            models.UniqueConstraint(
+                fields=["tenant_id", "name"], name="role_uq_tenant_name"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["tenant_id", "status"], name="role_ix_tenant_status")
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class RolePermission(TenantScopedMixin):
+    """role → permission code (RBAC as data, DDS §1).
+
+    CASCADE: a permission row is genuinely part of the role's life (DDS A.3) —
+    a role that is deleted takes its permission set with it. ``tenant_id`` is
+    denormalized onto the join for RLS (DDS A.2: every row carries its own
+    tenant_id).
+
+    DDS spec: composite PK ``(role_id, permission_code)``; implemented here as
+    a surrogate id + unique constraint (consistent with every table in the
+    platform; the invariant is identical).
+    """
+
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name="permissions")
+    permission_code = models.CharField(max_length=80)
+
+    objects = TenantScopedManager()
+
+    class Meta:
+        db_table = "role_permission"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["role", "permission_code"], name="role_permission_uq_role_code"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["permission_code"], name="role_permission_ix_code")
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.role_id} -> {self.permission_code}"
+
+
+class MembershipRole(TenantScopedMixin):
+    """membership → roles (DDS §1): the role grants a membership holds.
+
+    CASCADE from membership (the grant is part of the membership's life);
+    RESTRICT from role (a role is retired, never deleted, while referenced).
+    """
+
+    membership = models.ForeignKey(
+        Membership, on_delete=models.CASCADE, related_name="roles"
+    )
+    role = models.ForeignKey(Role, on_delete=models.RESTRICT, related_name="memberships")
+
+    objects = TenantScopedManager()
+
+    class Meta:
+        db_table = "membership_role"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["membership", "role"], name="membership_role_uq_pair"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"membership {self.membership_id} -> role {self.role_id}"
+
+
+class InvitationStatus(models.TextChoices):
+    """Lifecycle of a pending invite (DDS §1)."""
+
+    PENDING = "pending", "Pending"
+    ACCEPTED = "accepted", "Accepted"
+    EXPIRED = "expired", "Expired"
+    REVOKED = "revoked", "Revoked"
+
+
+class Invitation(TenantScopedMixin, VersionedMixin, TimeStampedMixin):
+    """A pending invite to join a tenant (DDS §1).
+
+    The raw token is returned to the inviter exactly once, at creation, and
+    stored only as ``token_hash`` (sha256) — the database never holds the
+    secret. The redemption flow (MembershipService) looks the invitation up by
+    token_hash and applies its status/expiry/email guards inside
+    ``select_for_update``. The invitee has no membership yet, so redemption
+    reads the invitation unscoped by token (the token is the authorization) —
+    which is also why this table is deferred from the RLS expansion.
+    """
+
+    email = models.EmailField(max_length=254)
+    token_hash = models.CharField(max_length=64, unique=True)
+    status = models.CharField(
+        max_length=20,
+        choices=InvitationStatus.choices,
+        default=InvitationStatus.PENDING,
+    )
+    expires_at = models.DateTimeField()
+    invited_by = models.ForeignKey(
+        UserAccount,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="invitations_sent",
+    )
+    role = models.ForeignKey(
+        Role,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="invitations",
+    )
+
+    objects = TenantScopedManager()
+
+    class Meta:
+        db_table = "invitation"
+        constraints = [
+            status_constraint("status", InvitationStatus, "invitation_status_valid"),
+            models.CheckConstraint(
+                condition=models.Q(expires_at__gt=models.F("created_at")),
+                name="invitation_expiry_after_created",
+            ),
+        ]
+        indexes = [
+            partial_index(
+                fields=["tenant_id", "status", "expires_at"],
+                condition=models.Q(status=InvitationStatus.PENDING),
+                name="invitation_pending_tenant_exp",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"invite {self.email} @ tenant {self.tenant_id} ({self.status})"
