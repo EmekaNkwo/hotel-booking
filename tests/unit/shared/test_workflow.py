@@ -142,7 +142,7 @@ class TestSubstrateContract:
     @pytest.mark.django_db
     def test_run_changes_state_and_emits_event_and_audit_together(self, workflow_probe):
         booking = workflow_probe.objects.create(tenant_id=TENANT)
-        actor = get_user_model().objects.create_user(username="desk-agent")
+        actor = get_user_model().objects.create_user(email="desk-agent@example.com")
         runner = WorkflowRunner(booking)
 
         result = runner.run("confirm", actor=actor, reason="guest confirmed")

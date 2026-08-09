@@ -49,7 +49,7 @@ class TestRecording:
     def test_actor_is_a_real_fk_with_set_null(self):
         from django.contrib.auth import get_user_model
 
-        actor = get_user_model().objects.create_user(username="desk-agent")
+        actor = get_user_model().objects.create_user(email="desk-agent@example.com")
         entry = AuditService.record(
             tenant_id=TENANT, entity_type="booking", entity_id="42",
             action="confirm", actor=actor,
