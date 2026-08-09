@@ -53,3 +53,14 @@ class IdempotencyInProgress(IdempotencyError):
     original operation is still running under the same key.
     """
 
+
+class TenantContextMissing(Exception):
+    """Business code required a tenant context but none was established.
+
+    Raised by ``tenancy.require_current_tenant()`` when a request carries no
+    tenant context (anonymous, multiple memberships without a validated
+    selection, or a non-request thread). Callers must not silently proceed
+    without a tenant — an unfiltered tenant-scoped query is the leak this
+    exists to prevent.
+    """
+
