@@ -25,7 +25,7 @@ class StatusProbe(models.Model):
     )
 
     class Meta:
-        app_label = "shared"
+        app_label = "probes"
         constraints = [status_constraint("status", ProbeStatus, "statusprobe_status_valid")]
 
 
@@ -36,7 +36,7 @@ class NoConstraintProbe(models.Model):
     )
 
     class Meta:
-        app_label = "shared"
+        app_label = "probes"
 
 
 def _ensure_table(probe):

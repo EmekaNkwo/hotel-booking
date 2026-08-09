@@ -21,7 +21,7 @@ class StampProbe(TimeStampedMixin):
     label = models.CharField(max_length=50)
 
     class Meta:
-        app_label = "shared"
+        app_label = "probes"
 
 
 def _ensure_table(model):
@@ -88,7 +88,7 @@ class TestFieldInvariants:
 
     def test_no_stamp_table_is_created_for_the_base_itself(self):
         # An abstract base never materializes as its own table.
-        assert StampProbe._meta.db_table == "shared_stampprobe"
+        assert StampProbe._meta.db_table == "probes_stampprobe"
 
 
 class TestLifecycle:

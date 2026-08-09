@@ -1,67 +1,13 @@
-"""Shared base models — the Django shape of the Shared Kernel (M1.2).
+"""Abstract base mixins — the entity shape of the Shared Kernel (M1.2).
 
-The value objects (apps/shared/value_objects) live framework-free; these
-abstract bases are where entities take their first Django shape. Concrete
-contexts inherit them so cross-cutting concerns (timestamps, tenancy,
-optimistic locking) are defined once and enforced everywhere, instead of being
-re-declared (and drifting) on every table.
+Concrete contexts inherit these so cross-cutting concerns (lifecycle stamps,
+tenancy, optimistic locking, append-only logs) are defined once and enforced
+everywhere, instead of being re-declared (and drifting) on every table.
 """
 
 from django.db import models
 
-from apps.shared.exceptions import ConcurrencyError
-
-
-def partial_index(
-    fields: list[str], condition: models.Q, name: str
-) -> models.Index:
-    """A conditional (partial) index covering only rows matching ``condition``.
-
-    A full index covers every row; a partial index covers only the hot subset
-    (e.g. ``created_at`` for rows where ``status='pending'``), so it stays tiny
-    as the table grows — cheaper writes, a cache-hot index, and the same
-    speedup for the queries that touch the subset. Declare it in ``Meta.indexes``;
-    ``makemigrations`` realizes it as ``CREATE INDEX ... WHERE ...``.
-
-    The *mechanism* is kernel; which subset is hot is context policy.
-    """
-    return models.Index(name=name, fields=fields, condition=condition)
-
-
-def conditional_update(
-    queryset: models.QuerySet, conditions: dict[str, object], values: dict[str, object]
-) -> int:
-    """Run ONE atomic conditional UPDATE over rows matching ``conditions``.
-
-    ``values`` may use ``F()`` expressions (e.g. ``inventory=F("inventory")-1``),
-    which are evaluated in the database, never in Python — so a counter bump
-    cannot lose a concurrent write the way ``obj.field += 1`` can. Returns the
-    number of rows updated: ``0`` means the conditions no longer held (a lost
-    race), letting callers detect and retry without a read-then-write window.
-    Pair a ``version`` in ``conditions`` with ``version=F("version")+1`` in
-    ``values`` for optimistic locking at the queryset level.
-
-    The *mechanism* is kernel; which conditions/values a workflow uses is the
-    owning context's policy.
-    """
-    return queryset.filter(**conditions).update(**values)
-
-
-def status_constraint(
-    field: str, choices: type[models.TextChoices], name: str
-) -> models.CheckConstraint:
-    """A CheckConstraint restricting ``field`` to the closed set ``choices``.
-
-    The E3 recipe's one non-obvious line, packaged so every status column shares
-    the mechanism: ``choices=`` alone is form-level only and enforces nothing in
-    the database — this constraint is what makes the closed set a schema fact
-    that every writer (create, bulk, raw SQL, imports) must respect.
-    The ``choices`` class (the allowed set) and ``name`` are context-owned.
-    """
-    return models.CheckConstraint(
-        condition=models.Q(**{f"{field}__in": choices.values}),
-        name=name,
-    )
+from apps.shared.exceptions import AppendOnlyViolation, ConcurrencyError
 
 
 class TimeStampedMixin(models.Model):
@@ -89,8 +35,7 @@ class TenantScopedMixin(models.Model):
     from a request body) and never changes; ``editable=False`` keeps it out of
     forms. The column is stored as a primitive BIGINT; M2 wires it to RLS and
     the tenant-scoping managers, and ``TenantId`` (M1.1) types it at the
-    service boundary. ``PositiveBigIntegerField`` enforces non-negativity the
-    same way the non-negative ``EntityId`` value object does.
+    service boundary.
     """
 
     tenant_id = models.PositiveBigIntegerField(db_index=True, editable=False)
@@ -159,6 +104,53 @@ class VersionedMixin(models.Model):
             .objects.using(using)
             .filter(pk=self.pk, version=old_version)
             .update(**values)
+        )
+
+
+class AppendOnlyQuerySet(models.QuerySet):
+    """QuerySet that refuses mutation — the ORM layer of append-only logs.
+
+    The database trigger/RLS layer (M2) is the schema-level guarantee; this is
+    defense-in-depth layer 1 so even ORM code cannot edit or delete a log row.
+    """
+
+    def update(self, **kwargs):
+        raise AppendOnlyViolation(
+            f"{self.model.__name__} is append-only; rows cannot be updated."
+        )
+
+    def delete(self):
+        raise AppendOnlyViolation(
+            f"{self.model.__name__} is append-only; rows cannot be deleted."
+        )
+
+
+class AppendOnlyMixin(models.Model):
+    """Abstract base for immutable, append-only logs (domain_event, audit_log).
+
+    Rows are created once and never updated or deleted: the ORM refuses both
+    at the model and QuerySet levels. ``created_at`` marks when the record was
+    appended; the business timestamp (``occurred_at``) is a separate field on
+    the concrete model.
+    """
+
+    created_at = models.DateTimeField(auto_now_add=True, editable=False)
+
+    objects = AppendOnlyQuerySet.as_manager()
+
+    class Meta:
+        abstract = True
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise AppendOnlyViolation(
+                f"{type(self).__name__} is append-only; existing rows cannot be updated."
+            )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise AppendOnlyViolation(
+            f"{type(self).__name__} is append-only; rows cannot be deleted."
         )
 
 

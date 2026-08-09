@@ -20,7 +20,7 @@ class SweepProbe(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        app_label = "shared"
+        app_label = "probes"
         indexes = [
             partial_index(
                 ["created_at"],
@@ -76,10 +76,10 @@ class TestSchemaValidity:
     @pytest.mark.django_db
     def test_creating_the_table_applies_the_partial_index(self, sweep_probe):
         # Proves the recipe yields valid, realizable schema on the engine.
-        assert sweep_probe._meta.db_table == "shared_sweepprobe"
+        assert sweep_probe._meta.db_table == "probes_sweepprobe"
         with connection.cursor() as cursor:
             constraints = connection.introspection.get_constraints(
-                cursor, "shared_sweepprobe"
+                cursor, "probes_sweepprobe"
             )
 
         assert "sweepprobe_pending_created" in constraints
@@ -98,6 +98,8 @@ class TestMigrationsDiscipline:
         assert "No changes detected" in out.getvalue()
 
     def test_probe_models_are_abstracted_away_from_migrations(self):
-        # Test-only models live in test files, not apps, so they never create
-        # pending migrations — the platform stays drift-free.
-        assert SweepProbe._meta.app_label == "shared"
+        # Test-only models register under the non-migrated "probes" app, never
+        # under "shared", so they cannot create pending migrations — the
+        # platform stays drift-free even though probe tables exist in the test DB.
+        assert SweepProbe._meta.app_label == "probes"
+        assert SweepProbe._meta.db_table == "probes_sweepprobe"

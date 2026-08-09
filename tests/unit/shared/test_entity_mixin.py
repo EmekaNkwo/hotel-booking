@@ -18,21 +18,21 @@ class TenantProbe(TenantScopedMixin):
     label = models.CharField(max_length=50)
 
     class Meta:
-        app_label = "shared"
+        app_label = "probes"
 
 
 class VersionProbe(VersionedMixin):
     label = models.CharField(max_length=50)
 
     class Meta:
-        app_label = "shared"
+        app_label = "probes"
 
 
 class EntityProbe(EntityMixin):
     label = models.CharField(max_length=50)
 
     class Meta:
-        app_label = "shared"
+        app_label = "probes"
 
 
 def _ensure_table(model):

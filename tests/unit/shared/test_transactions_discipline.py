@@ -21,7 +21,7 @@ class CounterProbe(models.Model):
     owner = models.CharField(max_length=20, default="guest")
 
     class Meta:
-        app_label = "shared"
+        app_label = "probes"
 
 
 def _ensure_table(model):
