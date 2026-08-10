@@ -5,6 +5,8 @@ resolves the principal from the session cookie, and DRF validates it too.
 """
 
 import pytest
+from django.test import override_settings
+from rest_framework.test import APIClient
 
 from apps.accounts.models import (
     Membership,
@@ -94,6 +96,69 @@ class TestMe:
         resp = api.get("/api/auth/me/")
 
         assert resp.data["tenant_id"] == 1  # sole active membership auto-selected
+
+
+class TestLoginThrottle:
+    @pytest.mark.django_db
+    @override_settings(AUTH_LOGIN_THROTTLE_RATE="2/min")
+    def test_burst_of_login_attempts_is_throttled(self, api, provisioned):
+        # The autouse _clear_throttle_cache fixture keeps this budget fresh.
+        for _ in range(2):
+            resp = api.post(
+                "/api/auth/login/",
+                {"email": "owner@acme.example", "password": "wrong"},
+                format="json",
+            )
+            assert resp.status_code == 401
+
+        # The third attempt in the window exceeds the per-IP budget.
+        resp = api.post(
+            "/api/auth/login/",
+            {"email": "owner@acme.example", "password": "wrong"},
+            format="json",
+        )
+        assert resp.status_code == 429
+
+
+class TestCsrfProtection:
+    @pytest.mark.django_db
+    def test_session_post_without_csrf_token_is_403(self, api, provisioned):
+        """The cookie boundary is CSRF-protected end-to-end: a session-authenticated
+        POST that omits the csrftoken is rejected even with a valid session."""
+        _login(api, "owner@acme.example", "Owner!pw123!")
+
+        strict = APIClient(enforce_csrf_checks=True)
+        strict.cookies["sessionid"] = api.cookies["sessionid"]
+
+        resp = strict.post(
+            "/api/members/invite/",
+            {"email": "new-hire@acme.example"},
+            format="json",
+            HTTP_X_TENANT_ID="1",
+        )
+
+        assert resp.status_code == 403
+
+    @pytest.mark.django_db
+    def test_session_post_with_csrf_token_succeeds(self, api, provisioned):
+        """The control: the same request WITH the matching token passes — the 403
+        above is the CSRF boundary, not something else."""
+        _, _, _, fd_role, _, _ = provisioned
+        _login(api, "owner@acme.example", "Owner!pw123!")
+
+        strict = APIClient(enforce_csrf_checks=True)
+        strict.cookies["sessionid"] = api.cookies["sessionid"]
+        strict.cookies["csrftoken"] = api.cookies["csrftoken"]
+
+        resp = strict.post(
+            "/api/members/invite/",
+            {"email": "new-hire@acme.example", "role_id": fd_role.pk},
+            format="json",
+            HTTP_X_TENANT_ID="1",
+            HTTP_X_CSRFTOKEN=api.cookies["csrftoken"].value,
+        )
+
+        assert resp.status_code == 201
 
 
 def _create_tenant2(viewer_user):

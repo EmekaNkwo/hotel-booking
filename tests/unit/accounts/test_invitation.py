@@ -219,3 +219,84 @@ class TestRevoke:
             InvitationService.revoke(
                 inviter=membership, invitation_id=pending_invite[0].pk
             )
+
+
+class TestExpireSweep:
+    """The maintenance sweep (Step 6): expired → EXPIRED, per-tenant context."""
+
+    def _make_expired_invite(self, tenant_id, email, now):
+        """Create a pending invite, then backdate created_at/expires_at so it is
+        past-due while still satisfying ``expires_at > created_at`` (the ORM
+        insert-time guard cannot create an already-expired row)."""
+        invitation = Invitation.objects.unscoped().create(
+            tenant_id=tenant_id,
+            email=email,
+            token_hash=_sha256(email),
+            expires_at=now + timedelta(days=7),
+        )
+        Invitation.objects.unscoped().filter(pk=invitation.pk).update(
+            created_at=now - timedelta(days=8),
+            expires_at=now - timedelta(days=1),
+        )
+        return invitation
+
+    @pytest.mark.django_db
+    def test_future_invitations_are_left_untouched(self, pending_invite):
+        invitation, _ = pending_invite
+
+        expired = InvitationService.expire_past_due()
+
+        assert expired == 0
+        invitation.refresh_from_db()
+        assert invitation.status == InvitationStatus.PENDING
+
+    @pytest.mark.django_db
+    def test_past_due_invitations_are_expired(self, pending_invite):
+        now = timezone.now()
+        invitation, _ = pending_invite  # still pending and in the future
+        self._make_expired_invite(1, "old@acme.example", now)
+
+        expired = InvitationService.expire_past_due(now=now)
+
+        assert expired == 1
+        invitation.refresh_from_db()
+        assert invitation.status == InvitationStatus.PENDING
+        stale = Invitation.objects.unscoped().get(email="old@acme.example")
+        assert stale.status == InvitationStatus.EXPIRED
+
+    @pytest.mark.django_db
+    def test_sweep_covers_multiple_tenants_each_under_its_context(
+        self, inviter, monkeypatch
+    ):
+        """The sweep is one run over many tenants — every update must happen
+        inside the tenant's own stamped context, so RLS admits each write."""
+        now = timezone.now()
+        TenantService.provision(
+            code="beta", name="Beta", base_currency="NGN", owner_email="beta@example.com"
+        )
+
+        from apps.shared import tenancy
+
+        seen = []
+        real_run = tenancy.run_as_tenant
+
+        def spy(tenant_id):
+            seen.append(tenant_id)
+            return real_run(tenant_id)
+
+        # Spy only the sweep itself — provisioning already finished above.
+        monkeypatch.setattr(tenancy, "run_as_tenant", spy)
+
+        self._make_expired_invite(1, "old@acme.example", now)
+        self._make_expired_invite(2, "old@beta.example", now)
+
+        expired = InvitationService.expire_past_due(now=now)
+
+        assert expired == 2
+        assert seen == [1, 2]  # each tenant group ran under its own context
+        assert (
+            Invitation.objects.unscoped()
+            .filter(status=InvitationStatus.EXPIRED)
+            .count()
+            == 2
+        )

@@ -91,6 +91,17 @@ ASGI_APPLICATION = "config.asgi.application"
 # package path "apps.accounts".
 AUTH_USER_MODEL = "accounts.UserAccount"
 
+# Failed-login lockout (M2.4). After AUTH_LOCKOUT_THRESHOLD consecutive failed
+# attempts the account is LOCKED; the lock auto-clears once AUTH_LOCKOUT_SECONDS
+# have elapsed since locked_at (see AccountService.record_login_failure /
+# reset_login_failures). Session throttle on top of this lands in M2.4 step 5.
+AUTH_LOCKOUT_THRESHOLD = 5
+AUTH_LOCKOUT_SECONDS = 900
+# Per-IP burst limit on the session-login endpoint (brute-force guard at the
+# app boundary; gateway-level limiting is an edge concern). Read per request so
+# tests can shrink it with override_settings.
+AUTH_LOGIN_THROTTLE_RATE = env("AUTH_LOGIN_THROTTLE_RATE", default="20/min")
+
 # ---- Database ---------------------------------------------------------------
 DATABASES = {
     "default": env.db(

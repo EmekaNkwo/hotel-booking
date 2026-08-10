@@ -23,3 +23,15 @@ class InvitationEmailMismatch(InvitationError):
 
 class InsufficientPermission(InvitationError):
     """The actor's membership lacks the permission the operation requires."""
+
+
+class MembershipError(Exception):
+    """Base for membership lifecycle failures (M2.4)."""
+
+
+class MembershipNotActive(MembershipError):
+    """The target membership is not an active grant."""
+
+
+class LastOwnerSelfRevoke(MembershipError):
+    """An owner cannot revoke their own grant while they are the tenant's only owner."""

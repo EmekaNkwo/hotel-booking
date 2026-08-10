@@ -22,8 +22,9 @@ and the RLS migrations (SDD §13.2 layers 1 and 3).
 """
 
 import threading
+from contextlib import contextmanager
 
-from django.db import models
+from django.db import connection, models
 
 from apps.shared.exceptions import TenantContextMissing
 
@@ -59,6 +60,43 @@ def clear_request_tenant() -> None:
     """Drop the thread-local context. Called on every request exit, including
     exceptions, so a context cannot leak into the next request."""
     _thread_local.tenant_id = None
+
+
+@contextmanager
+def run_as_tenant(tenant_id: int):
+    """Stamp tenant context for a non-request code path (trusted services).
+
+    Mirrors exactly what ``TenantContextMiddleware`` does for a request — the
+    thread-local (app-layer scoping) AND the transaction-local
+    ``set_config('app.tenant_id', …, true)`` that RLS reads — so trusted
+    service code that runs WITHOUT a resolved membership can still write
+    tenant-scoped rows under the correct context and RLS admits them.
+
+    This is the second trusted stamping path. It exists ONLY where the
+    authorization is not a membership the middleware could have resolved:
+
+    - invitation redemption — the token IS the authorization;
+    - tenant provisioning — the brand-new tenant has no members yet;
+    - maintenance sweeps (e.g. invitation expiry) that touch many tenants.
+
+    It is deliberately NOT for request code (the middleware owns that) and not
+    a way to bypass app-layer scoping: the thread-local is restored on exit,
+    and the DB GUC is transaction-local so it is auto-discarded at commit or
+    rollback.
+    """
+    previous = current_tenant_id()
+    set_request_tenant(tenant_id)
+    if connection.vendor == "postgresql":
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT set_config('app.tenant_id', %s, true)", [str(tenant_id)]
+            )
+    try:
+        yield
+    finally:
+        clear_request_tenant()
+        if previous is not None:
+            set_request_tenant(previous)
 
 
 # ---------------------------------------------------------------------------

@@ -17,7 +17,7 @@ from django.test import Client, override_settings
 
 from apps.accounts.models import Membership, MembershipStatus
 from apps.shared import tenancy
-from apps.tenants.models import Tenant
+from apps.tenants.models import Tenant, TenantStatus
 
 UserAccount = get_user_model()
 ECHO = override_settings(ROOT_URLCONF="tests.urls")
@@ -32,8 +32,10 @@ def _clean():
     tenancy.clear_request_tenant()
 
 
-def _tenant(code):
-    return Tenant.objects.create(code=code, name=code, base_currency="NGN")
+def _tenant(code, status=TenantStatus.ACTIVE):
+    # A membership is only resolvable while the tenant is OPERATING (ACTIVE).
+    # Provisioning (TenantService.provision) sets this; a raw fixture must too.
+    return Tenant.objects.create(code=code, name=code, base_currency="NGN", status=status)
 
 
 def _grant(user, tenant, status=MembershipStatus.ACTIVE):
@@ -82,6 +84,40 @@ class TestSingleMembership:
         client.force_login(user)
 
         assert _echo(client)["request_tenant_id"] is None
+
+
+class TestTenantStatus:
+    """M2.4: only OPERATING tenants resolve — a membership in a suspended or
+    decommissioned tenant must never establish a context."""
+
+    @ECHO
+    @pytest.mark.django_db
+    def test_membership_in_a_suspended_tenant_does_not_resolve(self):
+        tenant = _tenant("acme", status=TenantStatus.SUSPENDED)
+        user = UserAccount.objects.create_user(email="owner@example.com", password="pw")
+        _grant(user, tenant)
+
+        client = Client()
+        client.force_login(user)
+
+        assert _echo(client)["request_tenant_id"] is None
+
+    @ECHO
+    @pytest.mark.django_db
+    def test_suspended_tenant_cannot_be_selected_by_header(self):
+        # The tenant resolves to nothing, so the header selection never runs —
+        # the request simply gets no context. Safe-by-default: no grant chain
+        # exists for a suspended tenant, so there is nothing to honor.
+        tenant = _tenant("acme", status=TenantStatus.SUSPENDED)
+        user = UserAccount.objects.create_user(email="owner@example.com", password="pw")
+        _grant(user, tenant)
+
+        client = Client()
+        client.force_login(user)
+
+        body = client.get("/echo/", headers={"X-Tenant-Id": str(tenant.pk)}).json()
+        assert body["request_tenant_id"] is None
+        assert body["thread_tenant_id"] is None
 
 
 class TestHeaderSelection:

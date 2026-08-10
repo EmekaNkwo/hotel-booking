@@ -19,6 +19,7 @@ from apps.accounts.models import (
     UserAccount,
 )
 from apps.accounts.permissions import SEEDED_ROLES
+from apps.shared import tenancy
 from apps.tenants.flags import DEFAULT_ENABLED_FLAGS, FEATURE_FLAG_REGISTRY
 from apps.tenants.models import FeatureFlag, Tenant, TenantSettings, TenantStatus
 
@@ -53,38 +54,43 @@ class TenantService:
             if not created:
                 return tenant
 
-            TenantSettings.objects.create(tenant=tenant, settings=default_settings or {})
+            # The brand-new tenant has no members yet — no request context can
+            # exist for it. Stamp the tenant context explicitly (run_as_tenant,
+            # M2.4) so every tenant-scoped write lands under a context that RLS
+            # admits; on SQLite this is the app-layer scoping no-op.
+            with tenancy.run_as_tenant(tenant.pk):
+                TenantSettings.objects.create(tenant=tenant, settings=default_settings or {})
 
-            for flag_key in FEATURE_FLAG_REGISTRY:
-                FeatureFlag.objects.create(
-                    tenant_id=tenant.pk,
-                    flag_key=flag_key,
-                    enabled=flag_key in DEFAULT_ENABLED_FLAGS,
-                )
-
-            roles = {}
-            for role_name, permission_codes in SEEDED_ROLES.items():
-                role = Role.objects.create(
-                    tenant_id=tenant.pk, name=role_name, status=RoleStatus.PUBLISHED
-                )
-                RolePermission.objects.bulk_create(
-                    RolePermission(
-                        role=role, tenant_id=tenant.pk, permission_code=code
+                for flag_key in FEATURE_FLAG_REGISTRY:
+                    FeatureFlag.objects.create(
+                        tenant_id=tenant.pk,
+                        flag_key=flag_key,
+                        enabled=flag_key in DEFAULT_ENABLED_FLAGS,
                     )
-                    for code in permission_codes
-                )
-                roles[role_name] = role
 
-            owner, _ = UserAccount.objects.get_or_create(email=owner_email.lower())
-            membership, _ = Membership.objects.unscoped().get_or_create(
-                tenant_id=tenant.pk,
-                user_account=owner,
-                defaults={"status": MembershipStatus.ACTIVE},
-            )
-            MembershipRole.objects.unscoped().get_or_create(
-                membership=membership,
-                role=roles["tenant_owner"],
-                defaults={"tenant_id": tenant.pk},
-            )
+                roles = {}
+                for role_name, permission_codes in SEEDED_ROLES.items():
+                    role = Role.objects.create(
+                        tenant_id=tenant.pk, name=role_name, status=RoleStatus.PUBLISHED
+                    )
+                    RolePermission.objects.bulk_create(
+                        RolePermission(
+                            role=role, tenant_id=tenant.pk, permission_code=code
+                        )
+                        for code in permission_codes
+                    )
+                    roles[role_name] = role
+
+                owner, _ = UserAccount.objects.get_or_create(email=owner_email.lower())
+                membership, _ = Membership.objects.unscoped().get_or_create(
+                    tenant_id=tenant.pk,
+                    user_account=owner,
+                    defaults={"status": MembershipStatus.ACTIVE},
+                )
+                MembershipRole.objects.unscoped().get_or_create(
+                    membership=membership,
+                    role=roles["tenant_owner"],
+                    defaults={"tenant_id": tenant.pk},
+                )
 
         return tenant

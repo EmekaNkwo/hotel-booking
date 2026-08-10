@@ -13,6 +13,7 @@ covers the whole test.
 
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from rest_framework.test import APIClient
 
 from apps.accounts.models import (
@@ -37,6 +38,20 @@ VIEWER_PASSWORD = "Viewer!pw123!"
 def api():
     """An unauthenticated DRF test client (session-based)."""
     return APIClient()
+
+
+@pytest.fixture(autouse=True)
+def _clear_throttle_cache():
+    """Reset the DRF throttle history between tests.
+
+    ``AnonRateThrottle`` keys on the client IP, which is ``testserver`` for
+    every test, and the LocMem cache is process-global — so login attempts
+    would otherwise accumulate across tests and 429 the suite after ~20 of
+    them. Clearing before and after keeps each test's budget fresh.
+    """
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture

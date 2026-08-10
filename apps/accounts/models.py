@@ -10,7 +10,7 @@ principal plumbing (M2.1) both consume.
 
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
-from django.db import models
+from django.db import connection, models
 
 from apps.accounts.managers import UserAccountManager
 from apps.accounts.permissions import is_valid
@@ -21,6 +21,7 @@ from apps.shared.models import (
 )
 from apps.shared.models.recipes import partial_index, status_constraint
 from apps.shared.tenancy import TenantScopedManager, TenantScopedQuerySet
+from apps.tenants.models import Tenant, TenantStatus
 
 
 class UserStatus(models.TextChoices):
@@ -50,6 +51,7 @@ class UserAccount(AbstractBaseUser, PermissionsMixin, TimeStampedMixin, Versione
         default=UserStatus.ACTIVE,
     )
     failed_attempts = models.PositiveSmallIntegerField(default=0, editable=False)
+    locked_at = models.DateTimeField(null=True, blank=True, editable=False)
     deactivated_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     objects = UserAccountManager()
@@ -112,6 +114,37 @@ class MembershipManager(TenantScopedManager):
         # Explicit: a user's memberships are looked up before a tenant context
         # exists (and must never be auto-filtered to some other tenant).
         return self.unscoped().for_user(user)
+
+    def principal_tenants(self, user) -> list[int]:
+        """The user's active tenants, resolved WITHOUT a tenant context.
+
+        This is the middleware's principal lookup — the ONE read that must see
+        memberships across all tenants before any context exists. Under RLS
+        FORCE that read would be scoped to the empty config and return nothing,
+        so Postgres routes it through the ``SECURITY DEFINER`` function
+        ``app.active_memberships``: the single sanctioned cross-tenant read,
+        which also excludes non-active (suspended/decommissioned) tenants.
+        SQLite has no RLS, so it falls back to the equivalent ORM query so the
+        unit tier exercises the same contract.
+        """
+        if connection.vendor == "postgresql":
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT app.active_memberships(%s)", [user.pk])
+                return [row[0] for row in cursor.fetchall()]
+
+        ids = list(
+            self.unscoped()
+            .for_user(user)
+            .filter(status=MembershipStatus.ACTIVE)
+            .values_list("tenant_id", flat=True)
+        )
+        if not ids:
+            return []
+        return list(
+            Tenant.objects.filter(pk__in=ids, status=TenantStatus.ACTIVE).values_list(
+                "pk", flat=True
+            )
+        )
 
 
 class Membership(TimeStampedMixin, VersionedMixin, TenantScopedMixin):
@@ -286,6 +319,33 @@ class InvitationStatus(models.TextChoices):
     REVOKED = "revoked", "Revoked"
 
 
+class InvitationManager(TenantScopedManager):
+    """Invitation lookups; the token-hash pre-context lookup is vendor-gated."""
+
+    def lookup_tenant_by_token_hash(self, token_hash: str) -> int | None:
+        """The invitation's tenant from its token hash, WITHOUT a tenant context.
+
+        Redemption runs before the invitee has any membership, so it must read
+        the invitation across tenants by token (the token IS the
+        authorization). Under RLS FORCE that read would fail closed, so
+        Postgres routes it through the ``SECURITY DEFINER`` function
+        ``app.invitation_tenant``; SQLite falls back to the ORM. Returns None
+        when no invitation holds the hash — the caller maps that to
+        ``InvitationNotFound``.
+        """
+        if connection.vendor == "postgresql":
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT app.invitation_tenant(%s)", [token_hash])
+                row = cursor.fetchone()
+                return row[0] if row else None
+        return (
+            self.unscoped()
+            .filter(token_hash=token_hash)
+            .values_list("tenant_id", flat=True)
+            .first()
+        )
+
+
 class Invitation(TenantScopedMixin, VersionedMixin, TimeStampedMixin):
     """A pending invite to join a tenant (DDS §1).
 
@@ -321,7 +381,7 @@ class Invitation(TenantScopedMixin, VersionedMixin, TimeStampedMixin):
         related_name="invitations",
     )
 
-    objects = TenantScopedManager()
+    objects = InvitationManager()
 
     class Meta:
         db_table = "invitation"

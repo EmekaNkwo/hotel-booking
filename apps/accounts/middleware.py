@@ -29,7 +29,7 @@ it does three things once per request (SDD §13.2 layer 1):
 from django.core.exceptions import PermissionDenied
 from django.db import connection, transaction
 
-from apps.accounts.models import Membership, MembershipStatus
+from apps.accounts.models import Membership
 from apps.shared import tenancy
 
 
@@ -62,11 +62,11 @@ class TenantContextMiddleware:
         self._stamp_db(tenant_id)
 
     def _resolve_tenant(self, request, user) -> int | None:
-        tenant_ids = list(
-            Membership.objects.for_user(user)
-            .filter(status=MembershipStatus.ACTIVE)
-            .values_list("tenant_id", flat=True)
-        )
+        # principal_tenants is the ONE sanctioned cross-tenant read: it routes
+        # through the SECURITY DEFINER app.active_memberships on Postgres (RLS
+        # FORCE would otherwise scope this to the empty config) and excludes
+        # memberships in non-active tenants.
+        tenant_ids = Membership.objects.principal_tenants(user)
         if not tenant_ids:
             return None
 

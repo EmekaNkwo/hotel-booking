@@ -26,8 +26,15 @@ from apps.accounts.api.serializers import (
     RoleSummarySerializer,
     UserAccountSerializer,
 )
+from apps.accounts.api.throttles import AuthLoginThrottle
+from apps.accounts.exceptions import LastOwnerSelfRevoke, MembershipNotActive
 from apps.accounts.models import Membership, MembershipStatus, Role
-from apps.accounts.services import AuthService, InvitationService, RoleService
+from apps.accounts.services import (
+    AuthService,
+    InvitationService,
+    MembershipService,
+    RoleService,
+)
 from apps.tenants.models import Tenant
 
 # ── Auth endpoints ────────────────────────────────────────────────────────
@@ -42,6 +49,7 @@ class LoginView(APIView):
     """
 
     permission_classes = []
+    throttle_classes = [AuthLoginThrottle]
 
     @extend_schema(
         request={
@@ -286,6 +294,46 @@ class InviteMemberView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class MemberRevokeView(APIView):
+    """Soft-revoke a membership in the current tenant.
+
+    Sets the membership to ``revoked`` and drops its role grants, recording a
+    same-transaction ``membership.revoked`` audit entry. Requires ``member.manage``.
+    An owner cannot revoke their own last-owner membership (DMS #4 stand-in).
+    """
+
+    permission_classes = [IsAuthenticated, HasTenantContext, HasPermission("member.manage")]
+
+    @extend_schema(
+        request=None,
+        summary="Revoke a membership in the current tenant.",
+        responses={204: None},
+    )
+    def post(self, request: Request, member_id: int) -> Response:
+        actor = Membership.objects.get(
+            user_account=request.user,
+            tenant_id=request.tenant_id,
+            status=MembershipStatus.ACTIVE,
+        )
+        try:
+            MembershipService.revoke(
+                actor=actor,
+                membership_id=member_id,
+                reason="revoked via API",
+            )
+        except (MembershipNotActive, Membership.DoesNotExist):
+            return Response(
+                {"detail": "membership not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except LastOwnerSelfRevoke:
+            return Response(
+                {"detail": "an owner cannot revoke their own last-owner membership."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ── Roles (tenant-scoped, permission per action) ─────────────────────────

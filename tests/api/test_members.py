@@ -172,3 +172,65 @@ def _grant_viewer_second_tenant(viewer):
     )
     RolePermission.objects.create(role=r2, tenant_id=t2.pk, permission_code="member.view")
     MembershipRole.objects.create(membership=m2, role=r2, tenant_id=t2.pk)
+
+
+class TestRevokeMember:
+    """Revoke endpoint: lifecycle, permission, isolation (M2.4)."""
+
+    @pytest.mark.django_db
+    def test_owner_can_revoke_a_member(self, api, provisioned):
+        _, _, _, _, viewer, viewer_membership = provisioned
+        _login(api, "owner@acme.example", "Owner!pw123!")
+
+        resp = api.post(f"/api/members/{viewer_membership.pk}/revoke/", HTTP_X_TENANT_ID="1")
+
+        assert resp.status_code == 204
+        viewer_membership.refresh_from_db()
+        assert viewer_membership.status == MembershipStatus.REVOKED
+        assert not viewer_membership.roles.exists()
+        from apps.shared.models import AuditLog
+
+        assert AuditLog.objects.filter(
+            entity_type="membership", action="membership.revoked"
+        ).exists()
+
+    @pytest.mark.django_db
+    def test_revoke_requires_member_manage(self, api, provisioned):
+        # The viewer carries only member.view — revoking is forbidden.
+        _, _, owner_membership, _, _, _ = provisioned
+        _login(api, "viewer@acme.example", "Viewer!pw123!")
+
+        resp = api.post(f"/api/members/{owner_membership.pk}/revoke/", HTTP_X_TENANT_ID="1")
+
+        assert resp.status_code == 403
+
+    @pytest.mark.django_db
+    def test_cross_tenant_revoke_is_forbidden(self, api, provisioned):
+        # The acme owner is not a member of beta — the middleware rejects the
+        # attempt before any permission check runs.
+        beta, _ = _provision_second_tenant("beta@acme.example", "Beta!pw123")
+        _, _, _, _, viewer, viewer_membership = provisioned
+        _login(api, "owner@acme.example", "Owner!pw123!")
+
+        resp = api.post(
+            f"/api/members/{viewer_membership.pk}/revoke/", HTTP_X_TENANT_ID=str(beta.pk)
+        )
+
+        assert resp.status_code == 403
+
+    @pytest.mark.django_db
+    def test_owner_cannot_revoke_own_last_owner_membership(self, api, provisioned):
+        _, _, owner_membership, _, _, _ = provisioned
+        _login(api, "owner@acme.example", "Owner!pw123!")
+
+        resp = api.post(f"/api/members/{owner_membership.pk}/revoke/", HTTP_X_TENANT_ID="1")
+
+        assert resp.status_code == 409
+
+    @pytest.mark.django_db
+    def test_revoking_an_unknown_membership_is_404(self, api, provisioned):
+        _login(api, "owner@acme.example", "Owner!pw123!")
+
+        resp = api.post("/api/members/999999/revoke/", HTTP_X_TENANT_ID="1")
+
+        assert resp.status_code == 404

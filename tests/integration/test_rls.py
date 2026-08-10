@@ -8,12 +8,18 @@ layer:
 1. ``set_config('app.tenant_id', …, true)`` is transaction-local — discarded
    at commit AND at rollback, so a reused/pooled connection can never carry
    tenant A into tenant B's next transaction.
-2. The RLS migration gives EVERY tenant-scoped M1 table the intended policy:
-   reads scope by the config (USING), writes to another tenant are rejected
-   (WITH CHECK), and an un-stamped state fails closed to zero rows without
-   erroring. Each test is parametrized over all four tables — audit_log,
-   domain_event, outbox_event, idempotency_record.
-3. The superuser exemption is documented honestly.
+2. The RLS migrations give EVERY tenant-scoped table (the four M1 tables in
+   shared/0002, then the seven M2.2 identity & tenancy tables in
+   shared/0003) the intended policy: reads scope by the config (USING),
+   writes to another tenant are rejected (WITH CHECK), and an un-stamped
+   state fails closed to zero rows without erroring. Each test is
+   parametrized over all of them.
+3. The M2.4 SECURITY DEFINER resolvers (``app.active_memberships`` and
+   ``app.invitation_tenant``) are the single sanctioned cross-tenant reads —
+   the middleware's principal lookup and the redemption token→tenant lookup
+   both escape RLS, and redemption then re-stamps the invitation's tenant so
+   its writes are admitted.
+4. The superuser exemption is documented honestly.
 
 The DATABASE_URL role is a superuser, and Postgres does not apply RLS to
 superusers (BYPASSRLS), so the enforcement tests impersonate a dedicated
@@ -27,7 +33,9 @@ from django.db import connection, transaction
 from django.db.utils import ProgrammingError
 
 from apps.accounts.middleware import TenantContextMiddleware
+from apps.accounts.models import Membership, Role, UserAccount
 from apps.shared.models import OutboxEvent
+from apps.tenants.models import Tenant
 
 pytestmark = pytest.mark.skipif(
     connection.vendor != "postgresql", reason="RLS and set_config are Postgres-only"
@@ -73,6 +81,67 @@ TENANT_SCOPED_TABLES = {
             "INSERT INTO idempotency_record (scope, idempotency_key, request_hash, "
             "status, created_at, updated_at, tenant_id) "
             "VALUES ('booking.confirm', %s, 'hash', 'in_progress', now(), now(), %s)"
+        ),
+    },
+    # ---- M2.2 identity & tenancy tables (shared/0003) ----
+    # ``parent_rows`` counts the fixture rows each tenant-7 probe already sees,
+    # so the parametrized count assertions stay exact.
+    "membership": {
+        "value": 2,  # user_account_id — created by rls_parents
+        "parent_rows": 1,
+        "insert": (
+            "INSERT INTO membership (user_account_id, status, version, created_at, "
+            "updated_at, tenant_id) "
+            "VALUES (%s, 'active', 0, now(), now(), %s)"
+        ),
+    },
+    "role": {
+        "value": "probe-role",
+        "parent_rows": 1,
+        "insert": (
+            "INSERT INTO role (name, status, version, created_at, updated_at, tenant_id) "
+            "VALUES (%s, 'published', 0, now(), now(), %s)"
+        ),
+    },
+    "role_permission": {
+        "value": "probe.permission",
+        "insert": (
+            "INSERT INTO role_permission (permission_code, role_id, tenant_id) "
+            "VALUES (%s, 1, %s)"
+        ),
+    },
+    "membership_role": {
+        "value": 1,  # role_id — the rls_parents role in tenant 7
+        "insert": (
+            "INSERT INTO membership_role (role_id, membership_id, tenant_id) "
+            "VALUES (%s, 1, %s)"
+        ),
+    },
+    "invitation": {
+        "value": "tok-42",
+        "insert": (
+            "INSERT INTO invitation (token_hash, email, status, expires_at, version, "
+            "created_at, updated_at, tenant_id) "
+            "VALUES (%s, 'invitee@example.com', 'pending', now() + interval '1 hour', "
+            "0, now(), now(), %s)"
+        ),
+    },
+    "tenant_settings": {
+        "value": 7,  # tenant_id doubles as the identifying value (PK is the tenant)
+        # The spec convention passes (value, tenant). tenant_id takes the SECOND
+        # placeholder, so settings is written FIRST (value lands in the jsonb).
+        "insert": (
+            "INSERT INTO tenant_settings (settings, tenant_id, version, created_at, "
+            "updated_at) "
+            "VALUES (jsonb_build_object('probe', %s), %s, 0, now(), now())"
+        ),
+    },
+    "feature_flag": {
+        "value": "booking.confirm",
+        "insert": (
+            "INSERT INTO feature_flag (flag_key, enabled, deleted_at, created_at, "
+            "updated_at, tenant_id) "
+            "VALUES (%s, false, NULL, now(), now(), %s)"
         ),
     },
 }
@@ -121,6 +190,35 @@ def rls_probe_role(django_db_setup, django_db_blocker):
     with django_db_blocker.unblock():
         with connection.cursor() as cursor:
             _drop_probe_role(cursor)
+
+
+@pytest.fixture
+def rls_parents(django_db_blocker):
+    """The M2.2 FK spine the raw-insert specs reference.
+
+    Created under the superuser (BYPASSRLS) OUTSIDE any request tenant, so the
+    rows exist regardless of RLS. Two tenants (7 = probe tenant, 8 = foreign
+    tenant) with one membership + one role each; the ``membership``/``role``
+    count assertions account for these via each spec's ``parent_rows``.
+    """
+    with django_db_blocker.unblock():
+        UserAccount.objects.create(id=1, email="rls-parent-a@example.com", password="x")
+        UserAccount.objects.create(id=2, email="rls-parent-b@example.com", password="x")
+        Tenant.objects.create(id=7, code="acme", name="Acme", base_currency="NGN", status="active")
+        Tenant.objects.create(id=8, code="beta", name="Beta", base_currency="NGN", status="active")
+        Role.objects.create(id=1, tenant_id=7, name="r7", status="published")
+        Role.objects.create(id=2, tenant_id=8, name="r8", status="published")
+        Membership.objects.create(id=1, tenant_id=7, user_account_id=1, status="active")
+        Membership.objects.create(id=2, tenant_id=8, user_account_id=1, status="active")
+        # Explicit-id inserts do not advance a table's serial sequence — the
+        # raw-SQL specs (which omit id) would then collide on the next value.
+        # Bump each sequence past the fixture's rows.
+        for table in ("membership", "role", "user_account", "tenant"):
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), "
+                    f"(SELECT COALESCE(max(id), 1) FROM {table}))"
+                )
 
 
 class TestSetConfigTransactionLocal:
@@ -198,7 +296,7 @@ class TestRlsEnforcement:
 
     @pytest.mark.parametrize("table", TENANT_SCOPED_TABLES.keys())
     @pytest.mark.django_db(transaction=True)
-    def test_no_config_fails_closed_to_zero_rows(self, rls_probe_role, table):
+    def test_no_config_fails_closed_to_zero_rows(self, rls_probe_role, rls_parents, table):
         spec = TENANT_SCOPED_TABLES[table]
         with connection.cursor() as cursor:
             cursor.execute(spec["insert"], [spec["value"], 7])
@@ -214,7 +312,7 @@ class TestRlsEnforcement:
 
     @pytest.mark.parametrize("table", TENANT_SCOPED_TABLES.keys())
     @pytest.mark.django_db(transaction=True)
-    def test_scoped_insert_and_read_match_the_config(self, rls_probe_role, table):
+    def test_scoped_insert_and_read_match_the_config(self, rls_probe_role, rls_parents, table):
         spec = TENANT_SCOPED_TABLES[table]
         with transaction.atomic():
             with connection.cursor() as cursor:
@@ -223,13 +321,13 @@ class TestRlsEnforcement:
                     cursor.execute("SELECT set_config('app.tenant_id', '7', true)")
                     cursor.execute(spec["insert"], [spec["value"], 7])
                     cursor.execute(f'SELECT count(*) FROM "{table}"')
-                    assert cursor.fetchone()[0] == 1
+                    assert cursor.fetchone()[0] == 1 + spec.get("parent_rows", 0)
                 finally:
                     cursor.execute("RESET ROLE")
 
     @pytest.mark.parametrize("table", TENANT_SCOPED_TABLES.keys())
     @pytest.mark.django_db(transaction=True)
-    def test_cross_tenant_insert_is_blocked(self, rls_probe_role, table):
+    def test_cross_tenant_insert_is_blocked(self, rls_probe_role, rls_parents, table):
         spec = TENANT_SCOPED_TABLES[table]
         with transaction.atomic():
             with connection.cursor() as cursor:
@@ -244,7 +342,7 @@ class TestRlsEnforcement:
                         with transaction.atomic():
                             cursor.execute(spec["insert"], [spec["value"], 8])
                     cursor.execute(f'SELECT count(*) FROM "{table}"')
-                    assert cursor.fetchone()[0] == 1
+                    assert cursor.fetchone()[0] == 1 + spec.get("parent_rows", 0)
                 finally:
                     cursor.execute("RESET ROLE")
 
@@ -284,3 +382,70 @@ class TestRlsEnforcement:
         """
         _insert_outbox(tenant_id=7)
         assert OutboxEvent.objects.count() == 1
+
+
+class TestPrincipalResolver:
+    """M2.4: the SECURITY DEFINER reads are the ONE sanctioned escape hatch.
+
+    Everything else fails closed — the middleware could not do its job with a
+    plain query, so it uses a function that Postgres runs with definer rights.
+    """
+
+    @pytest.mark.django_db(transaction=True)
+    def test_principal_resolution_bypasses_rls_for_the_middleware(
+        self, rls_probe_role, rls_parents
+    ):
+        """The middleware's cross-tenant read works; every other read fails closed."""
+        with connection.cursor() as cursor:
+            cursor.execute(f"SET ROLE {PROBE_ROLE}")
+            try:
+                # No config → direct reads fail closed, even for the parent's own row.
+                cursor.execute("SELECT count(*) FROM membership")
+                assert cursor.fetchone()[0] == 0
+
+                # The sanctioned function resolves the parent's active tenant.
+                cursor.execute("SELECT app.active_memberships(%s)", [1])
+                assert cursor.fetchone()[0] == 7
+            finally:
+                cursor.execute("RESET ROLE")
+
+    @pytest.mark.django_db(transaction=True)
+    def test_redemption_runs_inside_the_invitation_tenant(self, rls_probe_role, rls_parents):
+        """The redemption flow: token→tenant lookup escapes RLS; the writes then
+        run inside the invitation's stamped context."""
+        with connection.cursor() as cursor:
+            # Seed a pending invitation in tenant 7 as the superuser (before SET ROLE).
+            cursor.execute(
+                "INSERT INTO invitation (token_hash, email, status, expires_at, version, "
+                "created_at, updated_at, tenant_id) "
+                "VALUES ('tok-42', 'invitee@example.com', 'pending', now() + interval '1 day', "
+                "0, now(), now(), 7)"
+            )
+            cursor.execute(f"SET ROLE {PROBE_ROLE}")
+            try:
+                # Pre-context: the token→tenant lookup escapes RLS.
+                cursor.execute("SELECT app.invitation_tenant(%s)", ["tok-42"])
+                assert cursor.fetchone()[0] == 7
+
+                # Post-context: membership + audit writes are admitted by tenant 7.
+                # set_config(…, true) is TRANSACTION-local, so the stamp and the
+                # writes must share one transaction — exactly the redemption flow.
+                with transaction.atomic():
+                    cursor.execute("SELECT set_config('app.tenant_id', '7', true)")
+                    cursor.execute(
+                        "INSERT INTO membership (user_account_id, status, version, created_at, "
+                        "updated_at, tenant_id) "
+                        "VALUES (2, 'active', 0, now(), now(), 7)"
+                    )
+                    cursor.execute(
+                        "INSERT INTO audit_log (entity_type, entity_id, action, reason, "
+                        "request_id, occurred_at, created_at, tenant_id) "
+                        "VALUES ('membership', '1', 'invitation.redeemed', '', '', now(), now(), 7)"
+                    )
+                    # Read-back inside the same stamped transaction: the probe
+                    # must SEE the rows it just wrote (USING passes), proving the
+                    # writes landed inside tenant 7's context.
+                    cursor.execute("SELECT count(*) FROM audit_log WHERE tenant_id = 7")
+                    assert cursor.fetchone()[0] == 1
+            finally:
+                cursor.execute("RESET ROLE")
