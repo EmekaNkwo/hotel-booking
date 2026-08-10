@@ -6,10 +6,18 @@ request that survives the middleware chain ends up here: ``URLResolver`` walks
 """
 
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    # Per-context API routes mount here as each milestone ships them.
-    # Example (M2): path("api/", include("apps.accounts.urls")),
+    # --- M2.3: the first real API surface ---
+    path("api/", include("apps.accounts.api.urls")),
+    # --- OpenAPI schema + browsable docs (drf-spectacular) ---
+    path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
+    path(
+        "api/docs/",
+        SpectacularSwaggerView.as_view(url_name="schema"),
+        name="swagger-ui",
+    ),
 ]

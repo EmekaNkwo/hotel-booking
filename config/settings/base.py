@@ -132,7 +132,19 @@ CELERY_TASK_TRACK_STARTED = True
 # ---- Django REST Framework --------------------------------------------------------
 REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
-    # Authentication + permissions classes arrive in M2 with the first real API.
+    # M2.3: session auth only — the TenantContextMiddleware resolves the
+    # principal from the session cookie BEFORE the view runs, so every
+    # tenant-scoped request gets a resolved context without DRF needing to
+    # re-authenticate. Token-based auth is deferred (it would require the
+    # middleware to also resolve from an Authorization header).
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 25,
 }
 
 SPECTACULAR_SETTINGS = {

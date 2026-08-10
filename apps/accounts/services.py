@@ -39,6 +39,7 @@ from apps.accounts.models import (
     MembershipRole,
     MembershipStatus,
     Role,
+    RolePermission,
 )
 from apps.accounts.permissions import Permissions
 from apps.shared.services.audit import AuditService
@@ -192,3 +193,51 @@ def _assert_redeemable(invitation: Invitation, user) -> None:
         raise InvitationEmailMismatch(
             "this token belongs to a different email address"
         )
+
+
+class AuthService:
+    """Authenticate and manage session lifecycle.
+
+    ``authenticate`` is pure — it wraps Django's backend call and returns the
+    user (or ``None``); the caller owns the request/session.
+    """
+
+    @staticmethod
+    def authenticate(*, email: str, password: str):
+        """Authenticate by email + password via Django's backends.
+
+        Returns an active ``UserAccount`` or ``None`` on failure. The caller
+        should call ``django.contrib.auth.login(request, user)`` after a
+        successful return.
+        """
+        from django.contrib.auth import authenticate as _authenticate
+
+        user = _authenticate(username=email.strip().lower(), password=password)
+        if user is not None and user.is_active:
+            return user
+        return None
+
+
+class RoleService:
+    """Create and manage tenant-scoped roles with registry-validated permissions."""
+
+    @staticmethod
+    def create(*, tenant_id: int, name: str, permission_codes: list[str]) -> Role:
+        """Create a role and attach the given permission codes.
+
+        Every code is validated against the closed registry before any write
+        (DDS §1: "permission codes validated against a registry at app layer").
+        Unknown codes are rejected immediately — no silent misconfiguration.
+        """
+        from apps.accounts.permissions import is_valid
+
+        for code in permission_codes:
+            if not is_valid(code):
+                raise ValueError(f"unknown permission code: {code!r}")
+        with transaction.atomic():
+            role = Role.objects.create(tenant_id=tenant_id, name=name)
+            RolePermission.objects.bulk_create(
+                RolePermission(role=role, tenant_id=tenant_id, permission_code=code)
+                for code in permission_codes
+            )
+        return role
