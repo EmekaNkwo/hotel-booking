@@ -8,7 +8,7 @@ delegate to services.
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from apps.accounts.models import Membership, Role, UserAccount
+from apps.accounts.models import Membership, MfaDevice, MfaDeviceType, Role, UserAccount
 
 
 class UserAccountSerializer(serializers.ModelSerializer):
@@ -63,3 +63,59 @@ class InviteMemberSerializer(serializers.Serializer):
 
     email = serializers.EmailField()
     role_id = serializers.IntegerField()
+
+
+class MfaDeviceSerializer(serializers.ModelSerializer):
+    """Read-only device summary (M2.5 step 5).
+
+    Deliberately omits ``secret_key`` — the stored Fernet ciphertext — and any
+    plaintext TOTP secret. The only plaintext exposure is the one-shot
+    provisioning URI returned by enrollment (service contract); every other
+    endpoint never sees it.
+    """
+
+    verified = serializers.SerializerMethodField()
+    removed = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MfaDevice
+        fields = ["id", "device_type", "name", "verified", "removed", "created_at"]
+        read_only_fields = fields
+
+    def get_verified(self, obj) -> bool:
+        return obj.verified_at is not None
+
+    def get_removed(self, obj) -> bool:
+        return obj.removed_at is not None
+
+
+class MfaEnrollRequestSerializer(serializers.Serializer):
+    """Enrollment input: a device name, optionally an explicit device type.
+
+    ``device_type`` exposes the schema's closed set (totp/webauthn); only totp
+    is implemented at M2.5, so webauthn is rejected by the service (400).
+    """
+
+    name = serializers.CharField(max_length=80)
+    device_type = serializers.ChoiceField(
+        choices=MfaDeviceType.choices,
+        default=MfaDeviceType.TOTP,
+        required=False,
+    )
+
+
+class MfaEnrollResponseSerializer(serializers.Serializer):
+    """The one-shot enrollment result: the device plus its provisioning URI.
+
+    The URI embeds the plaintext TOTP secret for the user to scan; it is
+    returned exactly once and never persisted (DDS §1).
+    """
+
+    device = MfaDeviceSerializer()
+    provisioning_uri = serializers.CharField()
+
+
+class MfaVerifyRequestSerializer(serializers.Serializer):
+    """The TOTP code the user reads from their authenticator app."""
+
+    code = serializers.CharField(min_length=6, max_length=8)

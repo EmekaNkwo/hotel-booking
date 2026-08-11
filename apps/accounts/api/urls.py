@@ -24,4 +24,17 @@ urlpatterns = [
     ),
     path("roles/", views.RoleListView.as_view(), name="api-role-list"),
     path("roles/create/", views.RoleCreateView.as_view(), name="api-role-create"),
+    # --- MFA devices (person-scoped, M2.5) ---
+    path("mfa/devices/", views.MfaDeviceListView.as_view(), name="api-mfa-device-list"),
+    path("mfa/devices/enroll/", views.MfaEnrollView.as_view(), name="api-mfa-enroll"),
+    path(
+        "mfa/devices/<int:device_id>/verify/",
+        views.MfaVerifyView.as_view(),
+        name="api-mfa-verify",
+    ),
+    path(
+        "mfa/devices/<int:device_id>/remove/",
+        views.MfaRemoveView.as_view(),
+        name="api-mfa-remove",
+    ),
 ]

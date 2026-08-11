@@ -22,17 +22,32 @@ from apps.accounts.api.permissions import HasPermission, HasTenantContext
 from apps.accounts.api.serializers import (
     InviteMemberSerializer,
     MembershipSerializer,
+    MfaDeviceSerializer,
+    MfaEnrollRequestSerializer,
+    MfaEnrollResponseSerializer,
+    MfaVerifyRequestSerializer,
     RoleCreateSerializer,
     RoleSummarySerializer,
     UserAccountSerializer,
 )
 from apps.accounts.api.throttles import AuthLoginThrottle
-from apps.accounts.exceptions import LastOwnerSelfRevoke, MembershipNotActive
-from apps.accounts.models import Membership, MembershipStatus, Role
+from apps.accounts.exceptions import (
+    LastOwnerSelfRevoke,
+    MembershipNotActive,
+    MfaDeviceNotFound,
+    MfaDeviceRemoved,
+    MfaDeviceUnverified,
+    MfaDuplicateDevice,
+    MfaError,
+    MfaInvalidCode,
+    MfaLastDevice,
+)
+from apps.accounts.models import Membership, MembershipStatus, MfaDevice, Role
 from apps.accounts.services import (
     AuthService,
     InvitationService,
     MembershipService,
+    MfaService,
     RoleService,
 )
 from apps.tenants.models import Tenant
@@ -381,3 +396,148 @@ class RoleCreateView(APIView):
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(RoleSummarySerializer(role).data, status=status.HTTP_201_CREATED)
+
+
+# ── MFA devices (person-scoped — the deliberate exception to tenant scoping) ─
+
+
+#: Service exception -> deliberate HTTP mapping. Specific types first; the base
+#: ``MfaError`` last so a subclass is never shadowed. Every message is a
+#: deliberate service message — internal exceptions and DB errors are never
+#: surfaced to the client.
+_MFA_EXCEPTION_STATUS = (
+    (MfaDeviceNotFound, status.HTTP_404_NOT_FOUND),
+    (MfaDeviceRemoved, status.HTTP_409_CONFLICT),
+    (MfaDeviceUnverified, status.HTTP_409_CONFLICT),
+    (MfaDuplicateDevice, status.HTTP_409_CONFLICT),
+    (MfaInvalidCode, status.HTTP_400_BAD_REQUEST),
+    (MfaLastDevice, status.HTTP_409_CONFLICT),
+    (MfaError, status.HTTP_400_BAD_REQUEST),
+)
+
+
+def _mfa_error_response(exc: MfaError) -> Response:
+    """Map a service MFA exception to a deliberate HTTP error response."""
+    for cls, code in _MFA_EXCEPTION_STATUS:
+        if isinstance(exc, cls):
+            return Response({"detail": str(exc)}, status=code)
+    return Response(
+        {"detail": "mfa request could not be completed"},
+        status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+class MfaDeviceListView(APIView):
+    """List the authenticated user's MFA devices (person-scoped, read-only).
+
+    Deliberately NOT tenant-scoped: a device belongs to the person, not the
+    tenant. Returns lifecycle state (verified/removed) but never the secret —
+    neither the stored ciphertext nor a plaintext.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        summary="The authenticated user's MFA devices.",
+        responses={200: MfaDeviceSerializer(many=True)},
+    )
+    def get(self, request: Request) -> Response:
+        devices = MfaDevice.objects.filter(user_account=request.user).order_by("-created_at")
+        return Response(MfaDeviceSerializer(devices, many=True).data)
+
+
+class MfaEnrollView(APIView):
+    """Enroll a new TOTP device for the authenticated user.
+
+    Returns the one-shot provisioning URI (embeds the plaintext secret for the
+    user to scan); only the Fernet ciphertext is stored. The write audits into
+    the request's tenant context, so a resolved tenant is required.
+    """
+
+    permission_classes = [IsAuthenticated, HasTenantContext]
+
+    @extend_schema(
+        request=MfaEnrollRequestSerializer,
+        summary="Enroll a TOTP device; returns the one-shot provisioning URI.",
+        responses={
+            201: MfaEnrollResponseSerializer,
+            400: {"description": "Invalid enrollment input (blank name, webauthn)."},
+            409: {"description": "A device with that name already exists."},
+        },
+    )
+    def post(self, request: Request) -> Response:
+        ser = MfaEnrollRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            device, uri = MfaService.enroll(
+                user=request.user,
+                device_type=ser.validated_data["device_type"],
+                name=ser.validated_data["name"],
+            )
+        except MfaError as exc:
+            return _mfa_error_response(exc)
+        return Response(
+            {"device": MfaDeviceSerializer(device).data, "provisioning_uri": uri},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class MfaVerifyView(APIView):
+    """Prove possession of a freshly enrolled device by entering its TOTP code.
+
+    Marks the device verified (idempotent on re-verification). Requires a
+    tenant context for the same-transaction audit.
+    """
+
+    permission_classes = [IsAuthenticated, HasTenantContext]
+
+    @extend_schema(
+        request=MfaVerifyRequestSerializer,
+        summary="Verify a freshly enrolled MFA device with a TOTP code.",
+        responses={
+            204: None,
+            400: {"description": "Invalid or expired TOTP code."},
+            404: {"description": "Device not found."},
+            409: {"description": "Device has been removed."},
+        },
+    )
+    def post(self, request: Request, device_id: int) -> Response:
+        ser = MfaVerifyRequestSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        try:
+            MfaService.verify_initial(
+                user=request.user, device_id=device_id, code=ser.validated_data["code"]
+            )
+        except MfaError as exc:
+            return _mfa_error_response(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MfaRemoveView(APIView):
+    """Soft-remove one of the authenticated user's verified MFA devices.
+
+    Enforces the last-device guard (an MFA-required role cannot be left
+    without a device) and the lifecycle invariant (an unverified device cannot
+    be removed). Idempotent on an already-removed device.
+    """
+
+    permission_classes = [IsAuthenticated, HasTenantContext]
+
+    @extend_schema(
+        request=None,
+        summary="Remove one of the authenticated user's MFA devices.",
+        responses={
+            204: None,
+            404: {"description": "Device not found."},
+            409: {
+                "description": "Last verified device while holding an MFA-required "
+                "role, or an unverified/removed device."
+            },
+        },
+    )
+    def post(self, request: Request, device_id: int) -> Response:
+        try:
+            MfaService.remove(user=request.user, device_id=device_id)
+        except MfaError as exc:
+            return _mfa_error_response(exc)
+        return Response(status=status.HTTP_204_NO_CONTENT)
