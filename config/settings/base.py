@@ -114,6 +114,10 @@ MFA_FERNET_KEY = env("MFA_FERNET_KEY", default="")
 # half-logged-in session cannot be left open.
 MFA_PENDING_TIMEOUT_SECONDS = env.int("MFA_PENDING_TIMEOUT_SECONDS", default=600)
 
+# Display name used as the "issuer" in the otpauth provisioning URI an
+# authenticator app shows the user when they scan a TOTP QR code.
+MFA_ISSUER = env("MFA_ISSUER", default="Hotel Booking")
+
 # ---- Database ---------------------------------------------------------------
 DATABASES = {
     "default": env.db(

@@ -27,6 +27,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
+from apps.accounts import security, totp
 from apps.accounts.exceptions import (
     InsufficientPermission,
     InvitationEmailMismatch,
@@ -36,6 +37,13 @@ from apps.accounts.exceptions import (
     InvitationNotPending,
     LastOwnerSelfRevoke,
     MembershipNotActive,
+    MfaDeviceNotFound,
+    MfaDeviceRemoved,
+    MfaDeviceUnverified,
+    MfaDuplicateDevice,
+    MfaError,
+    MfaInvalidCode,
+    MfaLastDevice,
 )
 from apps.accounts.models import (
     Invitation,
@@ -43,6 +51,8 @@ from apps.accounts.models import (
     Membership,
     MembershipRole,
     MembershipStatus,
+    MfaDevice,
+    MfaDeviceType,
     Role,
     RolePermission,
     UserAccount,
@@ -312,6 +322,203 @@ def _assert_redeemable(invitation: Invitation, user) -> None:
         raise InvitationEmailMismatch(
             "this token belongs to a different email address"
         )
+
+
+#: Roles whose holders must keep a verified MFA device (SDD §14.1: required for
+#: ``tenant_owner``, ``platform_admin``, ``finance``; only ``tenant_owner`` is
+#: seeded at M2). The last-device guard consults this; later slices extend it.
+MFA_REQUIRED_ROLES: frozenset[str] = frozenset({"tenant_owner"})
+
+
+def _holds_mfa_required_role(user) -> bool:
+    """True when ``user`` holds an MFA-required role in any active tenant.
+
+    Membership is the grant the principal plumbing validates against; the role
+    lookup mirrors ``_is_last_active_owner``. If true, removing the user's last
+    verified device would leave them unable to use that role — the guard blocks
+    it.
+    """
+    return Membership.objects.unscoped().filter(
+        user_account=user,
+        status=MembershipStatus.ACTIVE,
+        roles__role__name__in=MFA_REQUIRED_ROLES,
+    ).exists()
+
+
+class MfaService:
+    """TOTP device lifecycle (DMS §1) — enroll, prove, challenge, remove.
+
+    The service is the ONLY orchestrator of ``MfaDevice``. Crypto stays behind
+    the Step 3 boundaries (``totp``/``security``) — nothing here re-implements
+    either, and only the Fernet ciphertext is ever persisted (DDS §1). Every
+    write is ``transaction.atomic()`` so the row change and its same-transaction
+    ``audit_log`` commit or roll back together (M1.5). Every device lookup is
+    scoped to the authenticated ``user`` — object ownership is "a device is its
+    owner's, and no one else's," and authorization stays on the existing
+    authenticated-principal/tenant model (no new mechanism).
+    """
+
+    @staticmethod
+    def enroll(
+        *, user, device_type: str = MfaDeviceType.TOTP, name: str
+    ) -> tuple[MfaDevice, str]:
+        """Create an unverified TOTP device; returns ``(device, provisioning_uri)``.
+
+        The URI is built from the freshly generated plaintext secret and is the
+        ONLY place that secret leaves the process — it is returned once (to be
+        shown as a QR code) and never persisted or logged. Only the Fernet
+        ciphertext is stored. Enrollment is an in-tenant staff action, so the
+        same-transaction audit lands under the request's tenant context
+        (``require_current_tenant``).
+        """
+        tenant_id = tenancy.require_current_tenant()
+        name = name.strip()
+        if device_type != MfaDeviceType.TOTP:
+            raise MfaError("only totp devices can be enrolled at M2.5")
+        if not name:
+            raise MfaError("device name is required")
+
+        with transaction.atomic():
+            if MfaDevice.objects.filter(
+                user_account=user, device_type=device_type, name=name
+            ).exists():
+                raise MfaDuplicateDevice(
+                    f"a {device_type} device named {name!r} already exists"
+                )
+
+            secret = totp.generate_secret()
+            device = MfaDevice.objects.create(
+                user_account=user,
+                device_type=device_type,
+                name=name,
+                secret_key=security.encrypt_secret(secret),
+            )
+            AuditService.record(
+                tenant_id=tenant_id,
+                entity_type="user",
+                entity_id=str(user.pk),
+                action="mfa.enrolled",
+                actor=user,
+                reason=f"enrolled {device_type} device {name!r}",
+            )
+
+        uri = totp.build_provisioning_uri(secret, label=user.email, issuer=settings.MFA_ISSUER)
+        return device, uri
+
+    @staticmethod
+    def verify_initial(*, user, device_id: int, code: str) -> MfaDevice:
+        """Prove possession of a freshly enrolled device by entering its code.
+
+        Marks ``verified_at`` on success (single-field update) with a
+        same-transaction ``mfa.enabled`` audit. Idempotent: re-verifying an
+        already-verified device succeeds without a second audit. A removed
+        device can never be verified (DDS §1 lifecycle).
+        """
+        tenant_id = tenancy.require_current_tenant()
+        device = MfaDevice.objects.filter(pk=device_id, user_account=user).first()
+        if device is None:
+            raise MfaDeviceNotFound(f"no mfa device {device_id} for this user")
+        if device.removed_at is not None:
+            raise MfaDeviceRemoved(f"device {device_id} has been removed")
+        if device.verified_at is not None:
+            return device  # idempotent — possession already proven
+
+        if not totp.verify_code(security.decrypt_secret(device.secret_key), code):
+            raise MfaInvalidCode("the verification code is invalid or expired")
+
+        with transaction.atomic():
+            device.verified_at = timezone.now()
+            device.save(update_fields=["verified_at"])
+            AuditService.record(
+                tenant_id=tenant_id,
+                entity_type="user",
+                entity_id=str(user.pk),
+                action="mfa.enabled",
+                actor=user,
+                reason=f"verified {device.device_type} device {device.name!r}",
+            )
+        return device
+
+    @staticmethod
+    def verify_code(*, user, code: str, at: int | None = None) -> bool:
+        """True when ``code`` matches ANY of the user's verified, live devices.
+
+        Only verified, non-removed devices are candidates (a pending or removed
+        device can never authenticate — the MfaDevice lifecycle constraint). A
+        pure read with no audit: login attempts are bounded by the boundary's
+        throttle, not logged per challenge here.
+        """
+        devices = list(
+            MfaDevice.objects.filter(
+                user_account=user,
+                verified_at__isnull=False,
+                removed_at__isnull=True,
+            )
+        )
+        return any(
+            totp.verify_code(security.decrypt_secret(d.secret_key), code, at=at)
+            for d in devices
+        )
+
+    @staticmethod
+    def requires_challenge(*, user) -> bool:
+        """True when login must demand a TOTP code (≥1 verified, live device).
+
+        The two-step-login trigger: a user who has enrolled and verified a
+        device is challenged on every sign-in; one with none is not.
+        """
+        return MfaDevice.objects.filter(
+            user_account=user,
+            verified_at__isnull=False,
+            removed_at__isnull=True,
+        ).exists()
+
+    @staticmethod
+    def remove(*, user, device_id: int, reason: str = "") -> MfaDevice:
+        """Soft-remove a device (``removed_at``) with a same-transaction audit.
+
+        Runs under a ``select_for_update`` lock on the owning ``UserAccount``
+        row so two concurrent removes cannot both pass the last-device guard.
+        Idempotent: removing an already-removed device succeeds as a no-op. The
+        guard (``MfaLastDevice``) blocks removing the final verified device
+        while the user holds an MFA-required role in an active tenant
+        (SDD §14.1) — the minimal v1 stand-in for a future recovery flow.
+        """
+        with transaction.atomic():
+            locked_user = UserAccount.objects.select_for_update().get(pk=user.pk)
+            device = MfaDevice.objects.filter(pk=device_id, user_account=locked_user).first()
+            if device is None:
+                raise MfaDeviceNotFound(f"no mfa device {device_id} for this user")
+            if device.removed_at is not None:
+                return device  # idempotent
+            if device.verified_at is None:
+                raise MfaDeviceUnverified(
+                    "cannot remove an unverified device (DDS §1: only a verified "
+                    "device may be soft-removed)"
+                )
+
+            other_verified = MfaDevice.objects.filter(
+                user_account=locked_user,
+                verified_at__isnull=False,
+                removed_at__isnull=True,
+            ).exclude(pk=device.pk)
+            if not other_verified.exists() and _holds_mfa_required_role(locked_user):
+                raise MfaLastDevice(
+                    "cannot remove the last verified device while holding an "
+                    "MFA-required role"
+                )
+
+            device.removed_at = timezone.now()
+            device.save(update_fields=["removed_at"])
+            AuditService.record(
+                tenant_id=tenancy.require_current_tenant(),
+                entity_type="user",
+                entity_id=str(user.pk),
+                action="mfa.removed",
+                actor=locked_user,
+                reason=reason or f"removed {device.device_type} device {device.name!r}",
+            )
+        return device
 
 
 class AccountService:
