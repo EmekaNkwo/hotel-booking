@@ -19,6 +19,9 @@ DEBUG = False
 SECRET_KEY = "integration-test-secret-key"
 ALLOWED_HOSTS = ["testserver"]
 
+# MFA (M2.5): a deterministic Fernet key, matching the unit tier.
+MFA_FERNET_KEY = "bd1D_roplO5-kqaxbeZvpkOSkkumz5Uf_rOQSjhnWlQ="
+
 # No Redis/broker dependence; in-memory cache, eager Celery.
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 CELERY_TASK_ALWAYS_EAGER = True

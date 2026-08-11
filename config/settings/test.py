@@ -9,6 +9,10 @@ DEBUG = False
 SECRET_KEY = "test-secret-key"
 ALLOWED_HOSTS = ["testserver"]  # Django's test client presents this host.
 
+# MFA (M2.5): a deterministic Fernet key so TOTP-secret-encryption tests are
+# hermetic. Overrides the (empty) base default.
+MFA_FERNET_KEY = "bd1D_roplO5-kqaxbeZvpkOSkkumz5Uf_rOQSjhnWlQ="
+
 # Tests must not depend on Redis; use an in-memory cache.
 CACHES = {
     "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},

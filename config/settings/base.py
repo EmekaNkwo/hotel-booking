@@ -102,6 +102,18 @@ AUTH_LOCKOUT_SECONDS = 900
 # tests can shrink it with override_settings.
 AUTH_LOGIN_THROTTLE_RATE = env("AUTH_LOGIN_THROTTLE_RATE", default="20/min")
 
+# ---- MFA (M2.5) -----------------------------------------------------------
+# Fernet key (base64, 32 bytes) encrypting TOTP secrets at rest (DDS §1
+# mfa_device: "stores encrypted secret material only; no plaintext"). Empty by
+# default; the MFA encryption module fails closed on use if it is unset or
+# invalid. Test/dev/integration settings (and .env for dev) provide a real key.
+MFA_FERNET_KEY = env("MFA_FERNET_KEY", default="")
+
+# Half-authenticated session window after a successful password but before the
+# MFA code completes login (SDD §14.1, two-step login). Bounded short so a
+# half-logged-in session cannot be left open.
+MFA_PENDING_TIMEOUT_SECONDS = env.int("MFA_PENDING_TIMEOUT_SECONDS", default=600)
+
 # ---- Database ---------------------------------------------------------------
 DATABASES = {
     "default": env.db(
