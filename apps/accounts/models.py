@@ -8,6 +8,7 @@ username column. ``Membership`` is the user ↔ tenant grant whose lifecycle
 principal plumbing (M2.1) both consume.
 """
 
+from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser
 from django.contrib.auth.models import PermissionsMixin
 from django.db import connection, models
@@ -86,6 +87,69 @@ class UserAccount(AbstractBaseUser, PermissionsMixin, TimeStampedMixin, Versione
 
     def __str__(self) -> str:
         return self.email
+
+
+class MfaDeviceType(models.TextChoices):
+    """The closed set of second-factor credential types (DDS §1 mfa_device).
+
+    M2.5 implements ``totp`` (RFC 6238); ``webauthn`` is in the schema so the
+    closed set is a database fact now (E3), but its enrollment/verification is
+    a later slice.
+    """
+
+    TOTP = "totp", "TOTP"
+    WEBAUTHN = "webauthn", "WebAuthn"
+
+
+class MfaDevice(TimeStampedMixin):
+    """A second-factor credential owned by a ``UserAccount`` (DDS §1, SDD §14.1).
+
+    Platform-scoped (``UserAccount`` is platform-global, and a credential
+    belongs to a person, not a tenant), so deliberately **no** ``tenant_id`` —
+    it is not a tenant-scoped row, takes no RLS policy, and is never added to
+    ``TENANT_SCOPED_TABLES``.
+
+    ``secret_key`` holds the TOTP secret **as Fernet ciphertext only** — never
+    a plaintext secret. The encrypt/decrypt logic lands in Step 3/4; the field
+    carries the persistence shape now and is ``editable=False`` so it can never
+    appear in a form or be rendered as user input. ``verified_at`` (possession
+    proven) / ``removed_at`` (soft delete) drive the lifecycle constraint: a
+    device is either verified or not-yet-removed — it cannot be both unverified
+    AND removed (DDS §1: ``verified_at IS NOT NULL OR removed_at IS NULL``).
+    """
+
+    user_account = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="mfa_devices",
+    )
+    device_type = models.CharField(
+        max_length=20, choices=MfaDeviceType.choices
+    )
+    name = models.CharField(max_length=80)
+    secret_key = models.CharField(max_length=255, editable=False)
+    verified_at = models.DateTimeField(null=True, blank=True, editable=False)
+    removed_at = models.DateTimeField(null=True, blank=True, editable=False)
+
+    class Meta:
+        db_table = "mfa_device"
+        constraints = [
+            status_constraint(
+                "device_type", MfaDeviceType, "mfa_device_type_valid"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(verified_at__isnull=False)
+                | models.Q(removed_at__isnull=True),
+                name="mfa_device_verified_or_removed",
+            ),
+            models.UniqueConstraint(
+                fields=["user_account", "device_type", "name"],
+                name="mfa_device_uq_user_type_name",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"mfa {self.device_type} '{self.name}' @ user {self.user_account_id}"
 
 
 class MembershipStatus(models.TextChoices):
