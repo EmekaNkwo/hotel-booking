@@ -18,3 +18,19 @@ class AuthLoginThrottle(AnonRateThrottle):
     @property
     def rate(self) -> str:
         return settings.AUTH_LOGIN_THROTTLE_RATE
+
+
+class AuthMfaThrottle(AnonRateThrottle):
+    """Brute-force limiter for the second-factor (MFA) completion endpoint.
+
+    The user is not yet authenticated while a challenge is pending, so the
+    limiter keys on IP like the login throttle. Tighter than login on purpose:
+    a TOTP code has only 10^6 values, and the pending window is the whole
+    brute-force budget — this bounds guesses within it.
+    """
+
+    scope = "mfa"
+
+    @property
+    def rate(self) -> str:
+        return settings.AUTH_MFA_THROTTLE_RATE

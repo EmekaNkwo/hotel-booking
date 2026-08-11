@@ -10,6 +10,7 @@ from apps.accounts.api import views
 
 urlpatterns = [
     path("auth/login/", views.LoginView.as_view(), name="api-login"),
+    path("auth/mfa/", views.MfaLoginView.as_view(), name="api-mfa-login"),
     path("auth/logout/", views.LogoutView.as_view(), name="api-logout"),
     path("auth/me/", views.MeView.as_view(), name="api-me"),
     # --- Cross-tenant read (the deliberate exception to tenant scoping) ---

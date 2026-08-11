@@ -118,6 +118,11 @@ MFA_PENDING_TIMEOUT_SECONDS = env.int("MFA_PENDING_TIMEOUT_SECONDS", default=600
 # authenticator app shows the user when they scan a TOTP QR code.
 MFA_ISSUER = env("MFA_ISSUER", default="Hotel Booking")
 
+# Brute-force bound for the second-factor completion endpoint (step 6). The
+# user is anonymous during the MFA-pending window, so this keys on IP; tighter
+# than the password throttle because a TOTP code is only 10^6 values.
+AUTH_MFA_THROTTLE_RATE = env("AUTH_MFA_THROTTLE_RATE", default="10/min")
+
 # ---- Database ---------------------------------------------------------------
 DATABASES = {
     "default": env.db(

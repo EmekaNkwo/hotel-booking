@@ -10,6 +10,8 @@ serialization flow fully explicit — no ViewSet magic, no annotation joins —
 so a reader can trace the complete path from HTTP header to SQL in one sitting.
 """
 
+from django.conf import settings
+from django.contrib.auth import login
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers, status
@@ -30,7 +32,7 @@ from apps.accounts.api.serializers import (
     RoleSummarySerializer,
     UserAccountSerializer,
 )
-from apps.accounts.api.throttles import AuthLoginThrottle
+from apps.accounts.api.throttles import AuthLoginThrottle, AuthMfaThrottle
 from apps.accounts.exceptions import (
     LastOwnerSelfRevoke,
     MembershipNotActive,
@@ -42,7 +44,13 @@ from apps.accounts.exceptions import (
     MfaInvalidCode,
     MfaLastDevice,
 )
-from apps.accounts.models import Membership, MembershipStatus, MfaDevice, Role
+from apps.accounts.models import (
+    Membership,
+    MembershipStatus,
+    MfaDevice,
+    Role,
+    UserAccount,
+)
 from apps.accounts.services import (
     AuthService,
     InvitationService,
@@ -105,8 +113,150 @@ class LoginView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        from django.contrib.auth import login
+        if MfaService.requires_challenge(user=user):
+            # Two-step login (SDD §14.1): the password is verified but the
+            # session is NOT authenticated yet. Flush first so any pre-existing
+            # authenticated session or stale pending state is discarded (clean
+            # slate + a fresh session id — fixation-safe), then bind a short-
+            # lived challenge to this session. The challenge travels in the
+            # session cookie, so it is bound to this client and cannot be used
+            # by another user.
+            request.session.flush()
+            request.session["mfa_pending"] = {
+                "user_id": user.pk,
+                "expires_at": (
+                    timezone.now()
+                    + timezone.timedelta(seconds=settings.MFA_PENDING_TIMEOUT_SECONDS)
+                ).isoformat(),
+            }
+            return Response(
+                {"requires_mfa": True, "expires_in": settings.MFA_PENDING_TIMEOUT_SECONDS},
+                status=status.HTTP_202_ACCEPTED,
+            )
 
+        login(request, user)
+
+        memberships = (
+            Membership.objects.for_user(user)
+            .filter(status=MembershipStatus.ACTIVE)
+            .prefetch_related("roles__role")
+        )
+        return Response(
+            {
+                "user": UserAccountSerializer(user).data,
+                "memberships": MembershipSerializer(memberships, many=True).data,
+            }
+        )
+
+
+def _consume_challenge(request: Request) -> UserAccount | None:
+    """Validate the session's pending MFA challenge; return its user or None.
+
+    Fails closed: a malformed, expired, or user-gone challenge returns None
+    AFTER flushing the session — the challenge is discarded and can never be
+    replayed. The caller 401s on None with one opaque message (no oracle to
+    distinguish which invalid state occurred).
+    """
+    pending = request.session.get("mfa_pending")
+    if not isinstance(pending, dict):
+        request.session.flush()
+        return None
+    try:
+        user_id = int(pending["user_id"])
+        expires_at = timezone.datetime.fromisoformat(pending["expires_at"])
+    except (KeyError, TypeError, ValueError):
+        request.session.flush()
+        return None
+    if timezone.now() > expires_at:
+        request.session.flush()
+        return None
+    user = UserAccount.objects.filter(pk=user_id).first()
+    if user is None:
+        request.session.flush()
+        return None
+    return user
+
+
+class MfaLoginView(APIView):
+    """Complete the two-step login with a TOTP code (second factor).
+
+    The pending challenge lives in this session (created by the password step)
+    and is bound to the user it was issued for. Success FLUSHES the session
+    before ``login()`` — the pending state is consumed (no replay) and the
+    authenticated session gets a brand-new id (no fixation). Failure never
+    authenticates; an expired, malformed, or already-consumed challenge fails
+    closed and is discarded. The code is verified through ``MfaService.
+    verify_code`` — no TOTP logic lives here.
+    """
+
+    permission_classes = []
+    throttle_classes = [AuthMfaThrottle]
+
+    @extend_schema(
+        request={
+            "application/json": {
+                "type": "object",
+                "properties": {"code": {"type": "string"}},
+                "required": ["code"],
+            }
+        },
+        responses={
+            200: inline_serializer(
+                "MfaLoginResponse",
+                fields={
+                    "user": UserAccountSerializer(),
+                    "memberships": MembershipSerializer(many=True),
+                },
+            ),
+            400: {"description": "Missing code."},
+            401: {"description": "No/invalid/expired challenge, or wrong code."},
+        },
+        summary="Complete two-step login with the MFA code.",
+    )
+    def post(self, request: Request) -> Response:
+        code = request.data.get("code", "")
+        if not code:
+            return Response(
+                {"detail": "code is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        pending = request.session.get("mfa_pending")
+        if pending is None:
+            return Response(
+                {"detail": "no mfa challenge pending for this session."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        user = _consume_challenge(request)
+        if user is None:
+            # Expired, malformed, or user-mismatched challenge — fail closed and
+            # discard it. Returning the SAME 401 shape for every invalid state
+            # gives an attacker no oracle to distinguish them.
+            return Response(
+                {"detail": "mfa challenge is invalid or expired."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+        if not user.is_active:
+            request.session.flush()
+            return Response(
+                {"detail": "mfa challenge is invalid or expired."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        if not MfaService.verify_code(user=user, code=code):
+            # Wrong code — do NOT authenticate. The challenge stays valid for
+            # further attempts within its window (bounded by AuthMfaThrottle).
+            return Response(
+                {"detail": "invalid mfa code."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Success: consume the challenge and establish the REAL authenticated
+        # session. flush() discards the pending state AND rotates the session id
+        # before login() (which cycles it again) — the pre-auth identifier never
+        # becomes the authenticated one (session-fixation protection).
+        request.session.flush()
         login(request, user)
 
         memberships = (
