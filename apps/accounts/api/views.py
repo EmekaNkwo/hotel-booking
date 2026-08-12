@@ -258,6 +258,13 @@ class MfaLoginView(APIView):
         # becomes the authenticated one (session-fixation protection).
         request.session.flush()
         login(request, user)
+        # MFA assurance (Step 7): stamp the tenants active at this moment. The
+        # middleware's MfaEnforcementMiddleware evaluates this against the
+        # EFFECTIVE tenant per request, so completing MFA satisfies only the
+        # tenants the user already held here — a tenant granted later needs a
+        # fresh login. Derived from the principal's own memberships, never from
+        # a client-supplied field, so it cannot be forged.
+        request.session["mfa_verified_tenants"] = Membership.objects.principal_tenants(user)
 
         memberships = (
             Membership.objects.for_user(user)

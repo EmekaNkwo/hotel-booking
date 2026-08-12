@@ -40,8 +40,10 @@ def _provision_second_tenant(owner_email, owner_password):
 
 class TestMemberList:
     @pytest.mark.django_db
-    def test_owner_can_list_members(self, api, provisioned):
-        _login(api, "owner@acme.example", "Owner!pw123!")
+    def test_owner_can_list_members(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.get("/api/members/", HTTP_X_TENANT_ID="1")
 
@@ -93,12 +95,14 @@ class TestMemberList:
 
 class TestTenantIsolation:
     @pytest.mark.django_db
-    def test_member_of_tenant_a_cannot_read_tenant_b(self, api, provisioned):
+    def test_member_of_tenant_a_cannot_read_tenant_b(self, api, owner_mfa):
         """Cross-tenant isolation: acme's owner cannot see Beta's members."""
+        from tests.api.helpers import login_mfa
+
         beta, _ = _provision_second_tenant("beta@acme.example", "Beta!pw123")
 
         # The acme owner tries to read Beta — not a member → 403.
-        _login(api, "owner@acme.example", "Owner!pw123!")
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
         resp = api.get("/api/members/", HTTP_X_TENANT_ID=str(beta.pk))
 
         assert resp.status_code == 403
@@ -106,9 +110,12 @@ class TestTenantIsolation:
     @pytest.mark.django_db
     def test_member_of_tenant_b_reads_only_their_own(self, api, provisioned):
         """Beta's owner sees Beta members but never acme members."""
-        beta, _ = _provision_second_tenant("beta@acme.example", "Beta!pw123")
+        from tests.api.helpers import equip_owner_with_mfa, login_mfa
 
-        _login(api, "beta@acme.example", "Beta!pw123")
+        beta, _ = _provision_second_tenant("beta@acme.example", "Beta!pw123")
+        equip_owner_with_mfa(api, "beta@acme.example", "Beta!pw123")
+
+        login_mfa(api, "beta@acme.example", "Beta!pw123")
         resp = api.get("/api/members/", HTTP_X_TENANT_ID=str(beta.pk))
 
         assert resp.status_code == 200
@@ -119,9 +126,11 @@ class TestTenantIsolation:
 
 class TestInviteMember:
     @pytest.mark.django_db
-    def test_owner_can_invite_and_receives_a_token(self, api, provisioned):
-        _, _, _, fd_role, _, _ = provisioned
-        _login(api, "owner@acme.example", "Owner!pw123!")
+    def test_owner_can_invite_and_receives_a_token(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
+        _, _, _, fd_role, _, _ = owner_mfa
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.post(
             "/api/members/invite/",
@@ -135,9 +144,11 @@ class TestInviteMember:
         assert resp.data["email"] == "new-hire@acme.example"
 
     @pytest.mark.django_db
-    def test_inviting_role_from_another_tenant_is_404(self, api, provisioned):
+    def test_inviting_role_from_another_tenant_is_404(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
         foreign_role = Role.objects.create(tenant_id=999, name="rogue")
-        _login(api, "owner@acme.example", "Owner!pw123!")
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.post(
             "/api/members/invite/",
@@ -178,9 +189,11 @@ class TestRevokeMember:
     """Revoke endpoint: lifecycle, permission, isolation (M2.4)."""
 
     @pytest.mark.django_db
-    def test_owner_can_revoke_a_member(self, api, provisioned):
-        _, _, _, _, viewer, viewer_membership = provisioned
-        _login(api, "owner@acme.example", "Owner!pw123!")
+    def test_owner_can_revoke_a_member(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
+        _, _, _, _, viewer, viewer_membership = owner_mfa
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.post(f"/api/members/{viewer_membership.pk}/revoke/", HTTP_X_TENANT_ID="1")
 
@@ -219,17 +232,21 @@ class TestRevokeMember:
         assert resp.status_code == 403
 
     @pytest.mark.django_db
-    def test_owner_cannot_revoke_own_last_owner_membership(self, api, provisioned):
-        _, _, owner_membership, _, _, _ = provisioned
-        _login(api, "owner@acme.example", "Owner!pw123!")
+    def test_owner_cannot_revoke_own_last_owner_membership(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
+        _, _, owner_membership, _, _, _ = owner_mfa
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.post(f"/api/members/{owner_membership.pk}/revoke/", HTTP_X_TENANT_ID="1")
 
         assert resp.status_code == 409
 
     @pytest.mark.django_db
-    def test_revoking_an_unknown_membership_is_404(self, api, provisioned):
-        _login(api, "owner@acme.example", "Owner!pw123!")
+    def test_revoking_an_unknown_membership_is_404(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.post("/api/members/999999/revoke/", HTTP_X_TENANT_ID="1")
 

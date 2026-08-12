@@ -42,6 +42,8 @@ LOCAL_APPS = [
     "apps.shared",     # Shared Kernel: value objects + cross-cutting infra (M1)
     "apps.accounts",   # Identity & Access: the custom user lives here (E1, M2)
     "apps.tenants",    # Tenancy: the platform-scoped tenant root + lifecycle (M2)
+    "apps.properties", # Property: tenant-scoped property hierarchy (M3)
+    "apps.rooms",      # Rooms: tenant-scoped room catalog + state machine (M3)
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -59,6 +61,12 @@ MIDDLEWARE = [
     # transaction-local config is stable and can never leak across a pooled
     # connection (M2.1).
     "apps.accounts.middleware.TenantContextMiddleware",
+    # Enforces the tenant-sensitive MFA boundary for MFA-required roles (M2.5
+    # step 7). Runs inside TenantContextMiddleware's transaction (set_config is
+    # live) and AFTER tenant resolution (needs request.tenant_id). Raises 403
+    # for an authenticated MFA-required principal whose session lacks MFA
+    # assurance for the effective tenant.
+    "apps.accounts.middleware.MfaEnforcementMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]

@@ -12,8 +12,10 @@ from tests.api.helpers import login as _login
 
 class TestRoleList:
     @pytest.mark.django_db
-    def test_owner_can_list_roles(self, api, provisioned):
-        _login(api, "owner@acme.example", "Owner!pw123!")
+    def test_owner_can_list_roles(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.get("/api/roles/", HTTP_X_TENANT_ID="1")
 
@@ -37,8 +39,10 @@ class TestRoleList:
 
 class TestRoleCreate:
     @pytest.mark.django_db
-    def test_owner_can_create_a_role_with_permissions(self, api, provisioned):
-        _login(api, "owner@acme.example", "Owner!pw123!")
+    def test_owner_can_create_a_role_with_permissions(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.post(
             "/api/roles/create/",
@@ -53,8 +57,10 @@ class TestRoleCreate:
         assert resp.data["status"] == "draft"
 
     @pytest.mark.django_db
-    def test_invalid_permission_code_is_rejected(self, api, provisioned):
-        _login(api, "owner@acme.example", "Owner!pw123!")
+    def test_invalid_permission_code_is_rejected(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.post(
             "/api/roles/create/",

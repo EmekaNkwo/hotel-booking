@@ -140,11 +140,13 @@ class TestCsrfProtection:
         assert resp.status_code == 403
 
     @pytest.mark.django_db
-    def test_session_post_with_csrf_token_succeeds(self, api, provisioned):
+    def test_session_post_with_csrf_token_succeeds(self, api, owner_mfa):
         """The control: the same request WITH the matching token passes — the 403
         above is the CSRF boundary, not something else."""
-        _, _, _, fd_role, _, _ = provisioned
-        _login(api, "owner@acme.example", "Owner!pw123!")
+        from tests.api.helpers import login_mfa
+
+        _, _, _, fd_role, _, _ = owner_mfa
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         strict = APIClient(enforce_csrf_checks=True)
         strict.cookies["sessionid"] = api.cookies["sessionid"]

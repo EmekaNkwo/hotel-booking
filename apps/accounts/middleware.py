@@ -29,8 +29,43 @@ it does three things once per request (SDD §13.2 layer 1):
 from django.core.exceptions import PermissionDenied
 from django.db import connection, transaction
 
-from apps.accounts.models import Membership
+from apps.accounts.models import Membership, MembershipStatus
+from apps.accounts.services import MFA_REQUIRED_ROLES
 from apps.shared import tenancy
+
+#: Endpoints the authenticated user must always reach even while an
+#: MFA-required role is not yet satisfied: the auth identity surface (so a
+#: client can discover and leave) and the MFA device lifecycle (so an owner
+#: can enroll/verify/remove devices to satisfy the requirement — the
+#: chicken-and-egg break). ``/api/auth/login/`` and ``/api/auth/mfa/`` are
+#: pre-auth (anonymous), so they are skipped by the authenticated check anyway;
+#: listing them here makes the boundary explicit.
+MFA_EXEMPT_PREFIXES = (
+    "/api/auth/login/",
+    "/api/auth/mfa/",
+    "/api/auth/logout/",
+    "/api/auth/me/",
+    "/api/mfa/devices/",
+)
+
+
+def _membership_requires_mfa(user, tenant_id: int) -> bool:
+    """True when the user's ACTIVE membership in ``tenant_id`` carries an
+    MFA-required role (SDD §14.1; ``MFA_REQUIRED_ROLES`` is the single source
+    of truth — never duplicated). Scoped to the EFFECTIVE tenant, so the
+    policy is tenant-sensitive: completing MFA never makes a tenant where the
+    user merely holds a non-required role count as satisfied.
+    """
+    from django.conf import settings
+
+    if getattr(settings, "MFA_ENFORCEMENT_DISABLED", False):
+        return False
+    return Membership.objects.unscoped().filter(
+        tenant_id=tenant_id,
+        user_account=user,
+        status=MembershipStatus.ACTIVE,
+        roles__role__name__in=MFA_REQUIRED_ROLES,
+    ).exists()
 
 
 class TenantContextMiddleware:
@@ -93,3 +128,56 @@ class TenantContextMiddleware:
             cursor.execute(
                 "SELECT set_config('app.tenant_id', %s, true)", [str(tenant_id)]
             )
+
+
+class MfaEnforcementMiddleware:
+    """Enforce the tenant-sensitive MFA boundary (M2.5 step 7).
+
+    Runs AFTER TenantContextMiddleware (needs ``request.tenant_id`` and the
+    stamped RLS config — the transaction that wraps this request is the one
+    TenantContextMiddleware opened, so ``set_config`` is live here). For an
+    authenticated user acting in a tenant where their active membership
+    carries an MFA-required role (currently ``tenant_owner``), the session
+    must show MFA assurance for THAT tenant, or the request is denied.
+
+    Assurance is ``mfa_verified_tenants`` in the server-side session: the
+    active tenants at the moment MFA completed (the Step 6 login flow stamps
+    it). It is derived from the principal's own memberships by the login
+    flow — never from a client-supplied field — so it cannot be forged or
+    copied into another session, and it is evaluated against the EFFECTIVE
+    tenant on every request. Consequences of that tenant-sensitivity:
+
+    - A tenant the user was granted AFTER login is not in the stamp, so
+      operating there as an MFA-required role demands a fresh MFA login —
+      "completed MFA once" does not satisfy every tenant.
+    - Revoking the membership or removing the owner role flips
+      ``_membership_requires_mfa`` to False for that tenant, so the user is no
+      longer blocked (and conversely a promotion to owner now blocks until a
+      fresh login).
+
+    The MFA device lifecycle and auth identity endpoints are exempt so an
+    owner can enroll/verify devices (the setup chicken-and-egg) and can always
+    discover who they are and log out.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        self._enforce(request)
+        return self.get_response(request)
+
+    def _enforce(self, request) -> None:
+        user = getattr(request, "user", None)
+        tenant_id = getattr(request, "tenant_id", None)
+        if user is None or not user.is_authenticated or tenant_id is None:
+            return
+        if request.path.startswith(MFA_EXEMPT_PREFIXES):
+            return
+        if not _membership_requires_mfa(user, tenant_id):
+            return
+        if tenant_id not in (request.session.get("mfa_verified_tenants") or ()):
+            # Authenticated but not MFA-satisfied in this tenant. A plain 403 —
+            # no WWW-Authenticate, no redirect (this is an API): the client is
+            # expected to drive the user through the Step 6 flow.
+            raise PermissionDenied("mfa is required to operate in this tenant")

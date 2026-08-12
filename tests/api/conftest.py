@@ -93,3 +93,19 @@ def provisioned():
         viewer,
         viewer_membership,
     )
+
+
+@pytest.fixture
+def owner_mfa(api, provisioned):
+    """The provisioned tenant with the owner MFA-equipped.
+
+    The Step 7 middleware denies an MFA-required role (tenant_owner) whose
+    session lacks MFA assurance. RBAC tests that act as the owner use this
+    fixture and authenticate with ``login_mfa`` — which walks the full
+    password -> challenge -> code flow and stamps the session. The viewer
+    (no MFA-required role) is untouched and still logs in with ``login``.
+    """
+    from tests.api.helpers import equip_owner_with_mfa
+
+    equip_owner_with_mfa(api, OWNER_EMAIL, OWNER_PASSWORD)
+    return provisioned

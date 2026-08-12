@@ -11,8 +11,10 @@ from tests.api.helpers import login as _login
 
 class TestTenantList:
     @pytest.mark.django_db
-    def test_returns_the_users_tenants(self, api, provisioned):
-        _login(api, "owner@acme.example", "Owner!pw123!")
+    def test_returns_the_users_tenants(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.get("/api/tenants/")
 
@@ -25,8 +27,10 @@ class TestTenantList:
         assert api.get("/api/tenants/").status_code == 403
 
     @pytest.mark.django_db
-    def test_includes_role_names(self, api, provisioned):
-        _login(api, "owner@acme.example", "Owner!pw123!")
+    def test_includes_role_names(self, api, owner_mfa):
+        from tests.api.helpers import login_mfa
+
+        login_mfa(api, "owner@acme.example", "Owner!pw123!")
 
         resp = api.get("/api/tenants/")
         acme = [t for t in resp.data if t["code"] == "acme"][0]

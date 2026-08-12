@@ -21,6 +21,9 @@ ALLOWED_HOSTS = ["testserver"]
 
 # MFA (M2.5): a deterministic Fernet key, matching the unit tier.
 MFA_FERNET_KEY = "bd1D_roplO5-kqaxbeZvpkOSkkumz5Uf_rOQSjhnWlQ="
+# Disable MFA enforcement for integration tests — they run as the owner
+# and are not interactive, so they cannot complete the MFA challenge.
+MFA_ENFORCEMENT_DISABLED = True
 
 # No Redis/broker dependence; in-memory cache, eager Celery.
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}

@@ -23,6 +23,9 @@ from apps.shared.exceptions import TransitionNotAllowed
 from apps.shared.services.audit import AuditService
 from apps.shared.services.outbox import OutboxService
 
+# Workflow context for state transition enforcement
+from apps.shared.workflows.context import WorkflowContext
+
 
 def workflow_transition(*, field="state", source=None, target, event=None,
                         conditions=None, permission=None):
@@ -104,10 +107,11 @@ class WorkflowRunner:
         entity_id = str(self.instance.pk)
 
         with transaction.atomic():
-            before = self.state
-            getattr(self.instance, name)()  # django-fsm enforces guards, sets state
-            self.instance.save()  # transitions change state in memory only
-            after = self.state
+            with WorkflowContext():  # Mark that we're in a workflow
+                before = self.state
+                getattr(self.instance, name)()  # django-fsm enforces guards, sets state
+                self.instance.save()  # transitions change state in memory only
+                after = self.state
 
             if event_type:
                 OutboxService.record_event(
