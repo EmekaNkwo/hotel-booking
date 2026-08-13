@@ -1,7 +1,6 @@
 """Test different enforcement mechanisms for single-entry-point invariant."""
 
 import pytest
-from django.db import transaction
 
 from apps.rooms.models import Room, RoomStateEvent
 from apps.rooms.services import RoomStateMachine
@@ -12,7 +11,9 @@ class TestEnforcementMechanisms:
 
     @pytest.mark.django_db
     def test_current_bypass_vulnerability(self, tenant, property, room_type):
-        """Demonstrate the current vulnerability."""
+        """The bypass is fixed: a direct call changes state in memory, but
+        Room.save() rejects the persist outside a RoomStateMachine.apply()
+        workflow context."""
         room = Room.objects.create(
             tenant=tenant,
             property=property,
@@ -21,17 +22,16 @@ class TestEnforcementMechanisms:
             operational_state=Room.OperationalState.VACANT_CLEAN,
         )
 
-        # Direct call bypasses everything
         initial_events = RoomStateEvent.objects.count()
         assert initial_events == 0
 
-        # This should NOT be allowed but currently is
         room.allocate()
-        room.save()
+        with pytest.raises(ValueError):
+            room.save()
 
         room.refresh_from_db()
-        assert room.operational_state == Room.OperationalState.OCCUPIED_CLEAN
-        assert RoomStateEvent.objects.count() == 0  # No audit!
+        assert room.operational_state == Room.OperationalState.VACANT_CLEAN
+        assert RoomStateEvent.objects.count() == 0
 
     @pytest.mark.django_db
     def test_proper_path_works(self, tenant, property, room_type):

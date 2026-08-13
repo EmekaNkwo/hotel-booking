@@ -2,7 +2,7 @@
 
 import pytest
 
-from apps.rooms.models import RoomType, Room
+from apps.rooms.models import Room, RoomType
 
 
 @pytest.fixture

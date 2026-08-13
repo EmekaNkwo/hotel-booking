@@ -4,7 +4,7 @@ import pytest
 
 from apps.rooms.models import Room, RoomStateEvent
 from apps.rooms.services import RoomStateMachine
-from apps.shared.workflows.context import is_workflow_active, WorkflowContext
+from apps.shared.workflows.context import WorkflowContext, is_workflow_active
 
 
 class TestDependencyDirection:
@@ -43,8 +43,11 @@ class TestDependencyDirection:
 
         # Direct call should be blocked
         room.allocate()
-        with pytest.raises(ValueError, match="Room state changes must go through RoomStateMachine.apply()"):
+        with pytest.raises(
+            ValueError, match="Room state changes must go through RoomStateMachine.apply"
+        ):
             room.save()
+        room.refresh_from_db()  # the blocked call left operational_state mutated in memory
 
         # RoomStateMachine should work
         updated_room = RoomStateMachine.apply(room, "allocate", actor=None, reason="Test")

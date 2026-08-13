@@ -1,9 +1,10 @@
 """Room model tests (M3)."""
 
 import pytest
-from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.db.utils import IntegrityError
 
-from apps.rooms.models import RoomType, Room, RoomStateEvent, RoomConnection
+from apps.rooms.models import Room, RoomConnection, RoomStateEvent, RoomType
 
 
 class TestRoomType:
@@ -43,8 +44,8 @@ class TestRoomType:
 
     @pytest.mark.django_db
     def test_room_type_status_validation(self, tenant):
-        """Status must be one of: active, retired."""
-        with pytest.raises(ValidationError):
+        """Status must be one of: active, retired (DB CHECK constraint)."""
+        with pytest.raises(IntegrityError), transaction.atomic():
             RoomType.objects.create(
                 tenant=tenant,
                 code="STD-KING",
@@ -87,8 +88,8 @@ class TestRoom:
 
     @pytest.mark.django_db
     def test_room_operational_state_validation(self, tenant, property, room_type):
-        """Operational state must be one of the defined choices."""
-        with pytest.raises(ValidationError):
+        """Operational state must be one of the defined choices (DB CHECK constraint)."""
+        with pytest.raises(IntegrityError), transaction.atomic():
             Room.objects.create(
                 tenant=tenant,
                 property=property,
@@ -143,8 +144,8 @@ class TestRoomStateEvent:
 
     @pytest.mark.django_db
     def test_room_state_event_transition_validation(self, tenant, room):
-        """Transition must be one of the defined choices."""
-        with pytest.raises(ValidationError):
+        """Transition must be one of the defined choices (DB CHECK constraint)."""
+        with pytest.raises(IntegrityError), transaction.atomic():
             RoomStateEvent.objects.create(
                 tenant=tenant,
                 room=room,
@@ -205,8 +206,8 @@ class TestRoomConnection:
 
     @pytest.mark.django_db
     def test_room_connection_no_self_loop(self, tenant, room_a):
-        """RoomConnection cannot connect a room to itself."""
-        with pytest.raises(ValidationError):
+        """RoomConnection cannot connect a room to itself (DB CHECK constraint)."""
+        with pytest.raises(IntegrityError), transaction.atomic():
             RoomConnection.objects.create(
                 tenant=tenant,
                 room_a=room_a,

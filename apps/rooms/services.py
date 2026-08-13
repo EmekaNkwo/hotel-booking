@@ -4,7 +4,9 @@ RoomStateMachine: single entry point for all room state transitions.
 Uses WorkflowRunner for django-fsm integration with audit/outbox.
 """
 
-from apps.rooms.models import Room, RoomType
+from django.db import transaction
+
+from apps.rooms.models import Room, RoomStateEvent, RoomType
 from apps.shared.workflows.runner import WorkflowRunner
 
 
@@ -12,7 +14,8 @@ class RoomStateMachine:
     """Room operational state machine.
 
     Single entry point: apply(room, transition, actor, reason).
-    Uses WorkflowRunner for atomic state change + audit + outbox.
+    Uses WorkflowRunner for atomic state change + audit + outbox, and records
+    the Rooms-specific RoomStateEvent in the same transaction.
     """
 
     @staticmethod
@@ -31,8 +34,21 @@ class RoomStateMachine:
         Raises:
             TransitionNotAllowed: If transition is undefined or forbidden
         """
-        runner = WorkflowRunner(room)
-        return runner.run(transition_name, actor=actor, reason=reason)
+        runner = WorkflowRunner(room, field="operational_state")
+        with transaction.atomic():
+            from_state = room.operational_state
+            updated_room = runner.run(transition_name, actor=actor, reason=reason)
+            RoomStateEvent.objects.create(
+                tenant=updated_room.tenant,
+                room=updated_room,
+                from_state=from_state,
+                to_state=updated_room.operational_state,
+                transition=transition_name,
+                actor_id=actor.id if actor is not None else 0,
+                actor_type="user" if actor is not None else "system",
+                reason=reason,
+            )
+        return updated_room
 
 
 class RoomService:

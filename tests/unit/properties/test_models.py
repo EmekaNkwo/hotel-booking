@@ -2,8 +2,10 @@
 
 import pytest
 from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.db.utils import IntegrityError
 
-from apps.properties.models import Property, PropertyGroup, Building, Floor, Facility, MediaAsset
+from apps.properties.models import Building, Facility, Floor, MediaAsset, Property, PropertyGroup
 
 
 class TestPropertyGroup:
@@ -68,18 +70,19 @@ class TestProperty:
 
     @pytest.mark.django_db
     def test_property_status_validation(self, tenant):
-        """Status must be one of: draft, active, deactivated."""
-        with pytest.raises(ValidationError):
-            Property.objects.create(
-                tenant=tenant,
-                code="HOTEL001",
-                name="Hotel",
-                status="invalid",  # Not in choices
-                currency="USD",
-                timezone="UTC",
-                check_in_time="14:00:00",
-                check_out_time="12:00:00",
-            )
+        """Status must be one of: draft, active, deactivated (DB CHECK constraint)."""
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                Property.objects.create(
+                    tenant=tenant,
+                    code="HOTEL001",
+                    name="Hotel",
+                    status="invalid",  # Not in choices
+                    currency="USD",
+                    timezone="UTC",
+                    check_in_time="14:00:00",
+                    check_out_time="12:00:00",
+                )
 
     @pytest.mark.django_db
     def test_latitude_longitude_validation(self, tenant):

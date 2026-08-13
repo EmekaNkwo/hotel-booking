@@ -4,6 +4,7 @@ Room operational state machine + audit trail. No partitioning in M3 (deferred to
 """
 
 from django.db import models
+from django_fsm import FSMField
 
 from apps.shared.models.mixins import EntityMixin
 from apps.shared.tenancy import TenantScopedManager
@@ -99,7 +100,7 @@ class Room(EntityMixin):
         blank=True,
         related_name="rooms",
     )
-    operational_state = models.CharField(
+    operational_state = FSMField(
         max_length=32,
         choices=OperationalState.choices,
         default=OperationalState.VACANT_CLEAN,
@@ -312,7 +313,9 @@ class RoomStateEvent(EntityMixin):
         DEFECT = "defect", "Defect"
         MAINTENANCE = "maintenance", "Maintenance"
         RESTORE = "restore", "Restore"
+        RESTORE_DIRECT = "restore_direct", "Restore Direct"
         SERVICE = "service", "Service"
+        SERVICE_COMPLETE = "service_complete", "Service Complete"
 
     tenant = models.ForeignKey(
         "tenants.Tenant",
@@ -350,7 +353,9 @@ class RoomStateEvent(EntityMixin):
                         "defect",
                         "maintenance",
                         "restore",
+                        "restore_direct",
                         "service",
+                        "service_complete",
                     ]
                 ),
                 name="room_state_event_valid_transition",

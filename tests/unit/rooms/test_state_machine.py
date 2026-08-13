@@ -1,7 +1,6 @@
 """Room state machine tests (M3)."""
 
 import pytest
-from django.core.exceptions import ValidationError
 
 from apps.rooms.models import Room, RoomStateEvent
 from apps.rooms.services import RoomStateMachine
@@ -68,7 +67,9 @@ class TestStateMachine:
             operational_state=Room.OperationalState.CLEANING,
         )
 
-        updated = RoomStateMachine.apply(room, "complete_cleaning", actor=None, reason="Cleaning completed")
+        updated = RoomStateMachine.apply(
+            room, "complete_cleaning", actor=None, reason="Cleaning completed"
+        )
 
         assert updated.operational_state == Room.OperationalState.INSPECTED
         assert RoomStateEvent.objects.filter(room=room, transition="complete_cleaning").exists()
@@ -116,7 +117,9 @@ class TestStateMachine:
             operational_state=Room.OperationalState.OCCUPIED_CLEAN,
         )
 
-        updated = RoomStateMachine.apply(room, "service", actor=None, reason="Room service requested")
+        updated = RoomStateMachine.apply(
+            room, "service", actor=None, reason="Room service requested"
+        )
 
         assert updated.operational_state == Room.OperationalState.OCCUPIED_DIRTY
         assert RoomStateEvent.objects.filter(room=room, transition="service").exists()
@@ -132,7 +135,9 @@ class TestStateMachine:
             operational_state=Room.OperationalState.OCCUPIED_DIRTY,
         )
 
-        updated = RoomStateMachine.apply(room, "service_complete", actor=None, reason="Service completed")
+        updated = RoomStateMachine.apply(
+            room, "service_complete", actor=None, reason="Service completed"
+        )
 
         assert updated.operational_state == Room.OperationalState.OCCUPIED_CLEAN
         assert RoomStateEvent.objects.filter(room=room, transition="service_complete").exists()
@@ -164,7 +169,9 @@ class TestStateMachine:
             operational_state=Room.OperationalState.OCCUPIED_CLEAN,
         )
 
-        updated = RoomStateMachine.apply(room, "maintenance", actor=None, reason="Maintenance needed")
+        updated = RoomStateMachine.apply(
+            room, "maintenance", actor=None, reason="Maintenance needed"
+        )
 
         assert updated.operational_state == Room.OperationalState.OUT_OF_ORDER
         assert RoomStateEvent.objects.filter(room=room, transition="maintenance").exists()
@@ -196,7 +203,9 @@ class TestStateMachine:
             operational_state=Room.OperationalState.OUT_OF_ORDER,
         )
 
-        updated = RoomStateMachine.apply(room, "restore_direct", actor=None, reason="Maintenance completed")
+        updated = RoomStateMachine.apply(
+            room, "restore_direct", actor=None, reason="Maintenance completed"
+        )
 
         assert updated.operational_state == Room.OperationalState.VACANT_CLEAN
         assert RoomStateEvent.objects.filter(room=room, transition="restore_direct").exists()

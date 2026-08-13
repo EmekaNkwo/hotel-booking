@@ -1,7 +1,6 @@
 """Test that RoomStateMachine is the only entry point for state transitions."""
 
 import pytest
-from django.db import transaction
 
 from apps.rooms.models import Room, RoomStateEvent
 from apps.rooms.services import RoomStateMachine
@@ -10,7 +9,10 @@ from apps.rooms.services import RoomStateMachine
 class TestSingleEntryPoint:
     @pytest.mark.django_db
     def test_direct_django_fsm_call_bypasses_audit(self, tenant, property, room_type):
-        """Test if calling django-fsm methods directly bypasses audit/outbox."""
+        """Calling the django-fsm transition method directly (bypassing
+        RoomStateMachine) changes state in memory but Room.save() rejects the
+        persist — is_workflow_active() is False outside RoomStateMachine.apply(),
+        so the bypass is blocked before any audit/outbox/RoomStateEvent write."""
         room = Room.objects.create(
             tenant=tenant,
             property=property,
@@ -19,29 +21,17 @@ class TestSingleEntryPoint:
             operational_state=Room.OperationalState.VACANT_CLEAN,
         )
 
-        # Count initial state events
         initial_events = RoomStateEvent.objects.count()
         assert initial_events == 0
 
-        # Try to call django-fsm method directly
-        try:
-            # This should work if django-fsm methods are publicly accessible
-            room.allocate()
+        room.allocate()  # django-fsm sets the field in memory only
+        with pytest.raises(ValueError):
             room.save()
 
-            # Check if state changed without audit
-            room.refresh_from_db()
-            assert room.operational_state == Room.OperationalState.OCCUPIED_CLEAN
-
-            # Check if audit was bypassed
-            final_events = RoomStateEvent.objects.count()
-            assert final_events == 0  # No audit event created
-
-            print("⚠️  SECURITY ISSUE: Direct django-fsm calls bypass audit/outbox!")
-
-        except AttributeError:
-            # django-fsm methods are not accessible - this is good!
-            print("✅ django-fsm methods are not publicly accessible")
+        # No partial write: state on disk is unchanged, no audit event created.
+        room.refresh_from_db()
+        assert room.operational_state == Room.OperationalState.VACANT_CLEAN
+        assert RoomStateEvent.objects.count() == 0
 
     @pytest.mark.django_db
     def test_room_state_machine_creates_audit(self, tenant, property, room_type):
@@ -73,7 +63,9 @@ class TestSingleEntryPoint:
 
     @pytest.mark.django_db
     def test_direct_state_assignment_bypasses_everything(self, tenant, property, room_type):
-        """Test if direct state assignment bypasses all safeguards."""
+        """Direct attribute assignment + save() is rejected the same way as a
+        direct django-fsm call — Room.save() enforces the single entry point
+        regardless of how operational_state was changed in memory."""
         room = Room.objects.create(
             tenant=tenant,
             property=property,
@@ -85,16 +77,10 @@ class TestSingleEntryPoint:
         initial_events = RoomStateEvent.objects.count()
         assert initial_events == 0
 
-        # Direct state assignment (this should be possible but is a bad practice)
         room.operational_state = Room.OperationalState.OCCUPIED_CLEAN
-        room.save()
+        with pytest.raises(ValueError):
+            room.save()
 
-        # Verify state changed
         room.refresh_from_db()
-        assert room.operational_state == Room.OperationalState.OCCUPIED_CLEAN
-
-        # Verify no audit trail
-        final_events = RoomStateEvent.objects.count()
-        assert final_events == 0
-
-        print("⚠️  SECURITY ISSUE: Direct state assignment bypasses all safeguards!")
+        assert room.operational_state == Room.OperationalState.VACANT_CLEAN
+        assert RoomStateEvent.objects.count() == 0

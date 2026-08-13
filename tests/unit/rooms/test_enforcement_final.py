@@ -15,9 +15,7 @@ from django.db import transaction
 
 from apps.rooms.models import Room, RoomStateEvent
 from apps.rooms.services import RoomStateMachine
-from apps.shared.services.audit import AuditService
-from apps.shared.services.outbox import OutboxService
-from apps.shared.workflows.context import is_workflow_active
+from apps.shared.models import AuditLog, OutboxEvent
 
 
 class TestSingleEntryPointEnforcement:
@@ -38,7 +36,9 @@ class TestSingleEntryPointEnforcement:
         room.allocate()  # This changes state in memory
 
         # Try to save - this should be blocked
-        with pytest.raises(ValueError, match="Room state changes must go through RoomStateMachine.apply()"):
+        with pytest.raises(
+            ValueError, match="Room state changes must go through RoomStateMachine.apply"
+        ):
             room.save()
 
         # Verify state was NOT persisted
@@ -89,7 +89,7 @@ class TestSingleEntryPointEnforcement:
         RoomStateMachine.apply(room, "allocate", actor=None, reason="Test")
 
         # Check audit service
-        audits = AuditService.get_audits(tenant.id)
+        audits = AuditLog.objects.filter(tenant_id=tenant.id)
         room_audits = [a for a in audits if a.entity_id == str(room.pk)]
         assert len(room_audits) == 1
 
@@ -113,7 +113,7 @@ class TestSingleEntryPointEnforcement:
         RoomStateMachine.apply(room, "allocate", actor=None, reason="Test")
 
         # Check outbox service
-        events = OutboxService.get_events(tenant.id)
+        events = OutboxEvent.objects.filter(tenant_id=tenant.id)
         room_events = [e for e in events if e.aggregate_id == str(room.pk)]
         assert len(room_events) == 1
 
@@ -135,16 +135,16 @@ class TestSingleEntryPointEnforcement:
 
         # Count initial records
         initial_events = RoomStateEvent.objects.count()
-        initial_audits = len(AuditService.get_audits(tenant.id))
-        initial_outbox = len(OutboxService.get_events(tenant.id))
+        initial_audits = len(AuditLog.objects.filter(tenant_id=tenant.id))
+        initial_outbox = len(OutboxEvent.objects.filter(tenant_id=tenant.id))
 
         # Apply transition
         updated_room = RoomStateMachine.apply(room, "allocate", actor=None, reason="Test")
 
         # Verify all records were created in one transaction
         assert RoomStateEvent.objects.count() == initial_events + 1
-        assert len(AuditService.get_audits(tenant.id)) == initial_audits + 1
-        assert len(OutboxService.get_events(tenant.id)) == initial_outbox + 1
+        assert len(AuditLog.objects.filter(tenant_id=tenant.id)) == initial_audits + 1
+        assert len(OutboxEvent.objects.filter(tenant_id=tenant.id)) == initial_outbox + 1
         assert updated_room.operational_state == Room.OperationalState.OCCUPIED_CLEAN
 
     @pytest.mark.django_db
@@ -168,45 +168,46 @@ class TestSingleEntryPointEnforcement:
 
     @pytest.mark.django_db
     def test_all_transitions_enforced(self, tenant, property, room_type):
-        """Test that all transitions are enforced."""
-        room = Room.objects.create(
-            tenant=tenant,
-            property=property,
-            room_type=room_type,
-            code="101",
-            operational_state=Room.OperationalState.VACANT_CLEAN,
-        )
-
-        # Test all transitions
+        """Every one of the 12 transitions: direct call is blocked, and
+        RoomStateMachine.apply() from the transition's actual source state
+        works. Each transition gets its own room, since the 12 transitions
+        don't share a common source state (e.g. "service" only fires from
+        occupied_clean, not vacant_clean)."""
+        S = Room.OperationalState
         transitions = [
-            ("allocate", Room.OperationalState.OCCUPIED_CLEAN),
-            ("service", Room.OperationalState.OCCUPIED_DIRTY),
-            ("service_complete", Room.OperationalState.OCCUPIED_CLEAN),
-            ("checkout", Room.OperationalState.VACANT_DIRTY),
-            ("clean", Room.OperationalState.CLEANING),
-            ("complete_cleaning", Room.OperationalState.INSPECTED),
-            ("approve", Room.OperationalState.VACANT_CLEAN),
-            ("reject", Room.OperationalState.CLEANING),
-            ("defect", Room.OperationalState.OUT_OF_SERVICE),
-            ("maintenance", Room.OperationalState.OUT_OF_ORDER),
-            ("restore", Room.OperationalState.CLEANING),
-            ("restore_direct", Room.OperationalState.VACANT_CLEAN),
+            ("allocate", S.VACANT_CLEAN, S.OCCUPIED_CLEAN),
+            ("service", S.OCCUPIED_CLEAN, S.OCCUPIED_DIRTY),
+            ("service_complete", S.OCCUPIED_DIRTY, S.OCCUPIED_CLEAN),
+            ("checkout", S.OCCUPIED_CLEAN, S.VACANT_DIRTY),
+            ("clean", S.VACANT_DIRTY, S.CLEANING),
+            ("complete_cleaning", S.CLEANING, S.INSPECTED),
+            ("approve", S.INSPECTED, S.VACANT_CLEAN),
+            ("reject", S.INSPECTED, S.CLEANING),
+            ("defect", S.VACANT_CLEAN, S.OUT_OF_SERVICE),
+            ("maintenance", S.OCCUPIED_CLEAN, S.OUT_OF_ORDER),
+            ("restore", S.OUT_OF_SERVICE, S.CLEANING),
+            ("restore_direct", S.OUT_OF_ORDER, S.VACANT_CLEAN),
         ]
 
-        for transition_name, expected_state in transitions:
-            # Reset room to initial state
-            room.operational_state = Room.OperationalState.VACANT_CLEAN
-            room.save()
+        for i, (transition_name, source_state, expected_state) in enumerate(transitions):
+            room = Room.objects.create(
+                tenant=tenant,
+                property=property,
+                room_type=room_type,
+                code=f"10{i}",
+                operational_state=source_state,
+            )
 
-            # Try direct call (should be blocked)
+            # Direct call is blocked at save() time — no partial write.
             getattr(room, transition_name)()
-            with pytest.raises(ValueError, match="Room state changes must go through RoomStateMachine.apply()"):
+            with pytest.raises(
+                ValueError, match="Room state changes must go through RoomStateMachine.apply"
+            ):
                 room.save()
+            room.refresh_from_db()
+            assert room.operational_state == source_state
 
-            # Try through RoomStateMachine (should work)
-            room.operational_state = Room.OperationalState.VACANT_CLEAN
-            room.save()
-
+            # Through RoomStateMachine — the sanctioned path — it works.
             updated_room = RoomStateMachine.apply(room, transition_name, actor=None, reason="Test")
             assert updated_room.operational_state == expected_state
 
