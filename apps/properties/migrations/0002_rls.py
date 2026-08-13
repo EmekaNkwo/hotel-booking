@@ -2,6 +2,66 @@
 
 from django.db import migrations
 
+_ENABLE_SQL = [
+    # PropertyGroup RLS
+    """
+    CREATE POLICY property_group_tenant_isolation_policy ON properties_propertygroup
+    USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
+    """,
+    # Property RLS
+    """
+    CREATE POLICY property_tenant_isolation_policy ON properties_property
+    USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
+    """,
+    # Building RLS
+    """
+    CREATE POLICY building_tenant_isolation_policy ON properties_building
+    USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
+    """,
+    # Floor RLS
+    """
+    CREATE POLICY floor_tenant_isolation_policy ON properties_floor
+    USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
+    """,
+    # Facility RLS
+    """
+    CREATE POLICY facility_tenant_isolation_policy ON properties_facility
+    USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
+    """,
+    # MediaAsset RLS
+    """
+    CREATE POLICY mediaasset_tenant_isolation_policy ON properties_mediaasset
+    USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
+    """,
+]
+
+_DISABLE_SQL = [
+    "DROP POLICY IF EXISTS property_group_tenant_isolation_policy ON properties_propertygroup;",
+    "DROP POLICY IF EXISTS property_tenant_isolation_policy ON properties_property;",
+    "DROP POLICY IF EXISTS building_tenant_isolation_policy ON properties_building;",
+    "DROP POLICY IF EXISTS floor_tenant_isolation_policy ON properties_floor;",
+    "DROP POLICY IF EXISTS facility_tenant_isolation_policy ON properties_facility;",
+    "DROP POLICY IF EXISTS mediaasset_tenant_isolation_policy ON properties_mediaasset;",
+]
+
+
+def enable_rls(apps, schema_editor):
+    # Unit tier runs on SQLite (no RLS support); no-op there. The Postgres
+    # integration tier exercises this migration for real.
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    with schema_editor.connection.cursor() as cursor:
+        for statement in _ENABLE_SQL:
+            cursor.execute(statement)
+
+
+def disable_rls(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    with schema_editor.connection.cursor() as cursor:
+        for statement in _DISABLE_SQL:
+            cursor.execute(statement)
+
 
 class Migration(migrations.Migration):
 
@@ -10,46 +70,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunSQL(
-            sql=[
-                # PropertyGroup RLS
-                """
-                CREATE POLICY property_group_tenant_isolation_policy ON properties_propertygroup
-                USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
-                """,
-                # Property RLS
-                """
-                CREATE POLICY property_tenant_isolation_policy ON properties_property
-                USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
-                """,
-                # Building RLS
-                """
-                CREATE POLICY building_tenant_isolation_policy ON properties_building
-                USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
-                """,
-                # Floor RLS
-                """
-                CREATE POLICY floor_tenant_isolation_policy ON properties_floor
-                USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
-                """,
-                # Facility RLS
-                """
-                CREATE POLICY facility_tenant_isolation_policy ON properties_facility
-                USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
-                """,
-                # MediaAsset RLS
-                """
-                CREATE POLICY mediaasset_tenant_isolation_policy ON properties_mediaasset
-                USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
-                """,
-            ],
-            reverse_sql=[
-                "DROP POLICY IF EXISTS property_group_tenant_isolation_policy ON properties_propertygroup;",
-                "DROP POLICY IF EXISTS property_tenant_isolation_policy ON properties_property;",
-                "DROP POLICY IF EXISTS building_tenant_isolation_policy ON properties_building;",
-                "DROP POLICY IF EXISTS floor_tenant_isolation_policy ON properties_floor;",
-                "DROP POLICY IF EXISTS facility_tenant_isolation_policy ON properties_facility;",
-                "DROP POLICY IF EXISTS mediaasset_tenant_isolation_policy ON properties_mediaasset;",
-            ],
-        ),
+        migrations.RunPython(enable_rls, disable_rls),
     ]

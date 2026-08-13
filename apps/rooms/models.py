@@ -4,14 +4,13 @@ Room operational state machine + audit trail. No partitioning in M3 (deferred to
 """
 
 from django.db import models
-from django.core.validators import MinValueValidator
 
 from apps.shared.models.mixins import EntityMixin
 from apps.shared.tenancy import TenantScopedManager
-from apps.shared.workflows.runner import workflow_transition
 
 # State transition enforcement - import from shared kernel
 from apps.shared.workflows.context import is_workflow_active
+from apps.shared.workflows.runner import workflow_transition
 
 
 class RoomType(EntityMixin):
@@ -289,8 +288,8 @@ class Room(EntityMixin):
         if state_changed and not is_workflow_active():
             raise ValueError(
                 f"Room state changes must go through RoomStateMachine.apply(). "
-                f"Attempted to change state from {self._original_operational_state} to {self.operational_state} "
-                f"without proper workflow context."
+                f"Attempted to change state from {self._original_operational_state} "
+                f"to {self.operational_state} without proper workflow context."
             )
 
         # Normal save

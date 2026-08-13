@@ -2,6 +2,54 @@
 
 from django.db import migrations
 
+_ENABLE_SQL = [
+    # RoomType RLS
+    """
+    CREATE POLICY room_type_tenant_isolation_policy ON rooms_roomtype
+    USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
+    """,
+    # Room RLS
+    """
+    CREATE POLICY room_tenant_isolation_policy ON rooms_room
+    USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
+    """,
+    # RoomStateEvent RLS
+    """
+    CREATE POLICY room_state_event_tenant_isolation_policy ON rooms_roomstateevent
+    USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
+    """,
+    # RoomConnection RLS
+    """
+    CREATE POLICY room_connection_tenant_isolation_policy ON rooms_roomconnection
+    USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
+    """,
+]
+
+_DISABLE_SQL = [
+    "DROP POLICY IF EXISTS room_type_tenant_isolation_policy ON rooms_roomtype;",
+    "DROP POLICY IF EXISTS room_tenant_isolation_policy ON rooms_room;",
+    "DROP POLICY IF EXISTS room_state_event_tenant_isolation_policy ON rooms_roomstateevent;",
+    "DROP POLICY IF EXISTS room_connection_tenant_isolation_policy ON rooms_roomconnection;",
+]
+
+
+def enable_rls(apps, schema_editor):
+    # Unit tier runs on SQLite (no RLS support); no-op there. The Postgres
+    # integration tier exercises this migration for real.
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    with schema_editor.connection.cursor() as cursor:
+        for statement in _ENABLE_SQL:
+            cursor.execute(statement)
+
+
+def disable_rls(apps, schema_editor):
+    if schema_editor.connection.vendor != "postgresql":
+        return
+    with schema_editor.connection.cursor() as cursor:
+        for statement in _DISABLE_SQL:
+            cursor.execute(statement)
+
 
 class Migration(migrations.Migration):
 
@@ -10,34 +58,5 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.RunSQL(
-            sql=[
-                # RoomType RLS
-                """
-                CREATE POLICY room_type_tenant_isolation_policy ON rooms_roomtype
-                USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
-                """,
-                # Room RLS
-                """
-                CREATE POLICY room_tenant_isolation_policy ON rooms_room
-                USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
-                """,
-                # RoomStateEvent RLS
-                """
-                CREATE POLICY room_state_event_tenant_isolation_policy ON rooms_roomstateevent
-                USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
-                """,
-                # RoomConnection RLS
-                """
-                CREATE POLICY room_connection_tenant_isolation_policy ON rooms_roomconnection
-                USING (tenant_id = current_setting('app.current_tenant_id')::bigint);
-                """,
-            ],
-            reverse_sql=[
-                "DROP POLICY IF EXISTS room_type_tenant_isolation_policy ON rooms_roomtype;",
-                "DROP POLICY IF EXISTS room_tenant_isolation_policy ON rooms_room;",
-                "DROP POLICY IF EXISTS room_state_event_tenant_isolation_policy ON rooms_roomstateevent;",
-                "DROP POLICY IF EXISTS room_connection_tenant_isolation_policy ON rooms_roomconnection;",
-            ],
-        ),
+        migrations.RunPython(enable_rls, disable_rls),
     ]
