@@ -99,6 +99,14 @@ class Property(EntityMixin):
                 check=models.Q(status__in=["draft", "active", "deactivated"]),
                 name="property_valid_status",
             ),
+            models.CheckConstraint(
+                check=models.Q(latitude__gte=-90) & models.Q(latitude__lte=90),
+                name="property_latitude_range",
+            ),
+            models.CheckConstraint(
+                check=models.Q(longitude__gte=-180) & models.Q(longitude__lte=180),
+                name="property_longitude_range",
+            ),
         ]
         indexes = [
             models.Index(fields=["tenant", "status"]),

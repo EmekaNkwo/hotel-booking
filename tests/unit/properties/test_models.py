@@ -100,20 +100,36 @@ class TestProperty:
             latitude=40.7128,
             longitude=-74.0060,
         )
-        # Invalid latitude
-        with pytest.raises(ValidationError):
-            Property.objects.create(
-                tenant=tenant,
-                code="HOTEL002",
-                name="Hotel",
-                status=Property.Status.ACTIVE,
-                currency="USD",
-                timezone="UTC",
-                check_in_time="14:00:00",
-                check_out_time="12:00:00",
-                latitude=100,  # > 90
-                longitude=-74.0060,
-            )
+        # Invalid latitude - should trigger DB constraint
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                Property.objects.create(
+                    tenant=tenant,
+                    code="HOTEL002",
+                    name="Hotel",
+                    status=Property.Status.ACTIVE,
+                    currency="USD",
+                    timezone="UTC",
+                    check_in_time="14:00:00",
+                    check_out_time="12:00:00",
+                    latitude=100,  # > 90
+                    longitude=-74.0060,
+                )
+        # Invalid longitude - should trigger DB constraint
+        with pytest.raises(IntegrityError):
+            with transaction.atomic():
+                Property.objects.create(
+                    tenant=tenant,
+                    code="HOTEL003",
+                    name="Hotel",
+                    status=Property.Status.ACTIVE,
+                    currency="USD",
+                    timezone="UTC",
+                    check_in_time="14:00:00",
+                    check_out_time="12:00:00",
+                    latitude=40.7128,
+                    longitude=200,  # > 180
+                )
 
 
 class TestBuilding:

@@ -135,6 +135,20 @@ class Migration(migrations.Migration):
             constraint=models.CheckConstraint(check=models.Q(('status__in', ['draft', 'active', 'deactivated'])), name='property_valid_status'),
         ),
         migrations.AddConstraint(
+            model_name='property',
+            constraint=models.CheckConstraint(
+                check=models.Q(latitude__gte=-90) & models.Q(latitude__lte=90),
+                name='property_latitude_range',
+            ),
+        ),
+        migrations.AddConstraint(
+            model_name='property',
+            constraint=models.CheckConstraint(
+                check=models.Q(longitude__gte=-180) & models.Q(longitude__lte=180),
+                name='property_longitude_range',
+            ),
+        ),
+        migrations.AddConstraint(
             model_name='building',
             constraint=models.UniqueConstraint(fields=('property', 'code'), name='unique_building_code_per_property'),
         ),
