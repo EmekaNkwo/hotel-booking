@@ -13,6 +13,7 @@ for USD). Formatting to major units with a symbol (``₦450.00``) is presentatio
 """
 
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 
 from apps.shared.value_objects.currency import Currency
 from apps.shared.value_objects.exceptions import CurrencyMismatch, InvalidMoney
@@ -72,3 +73,21 @@ class Money:
 
     def __neg__(self) -> "Money":
         return Money(-self.amount, self.currency)
+
+    def percentage_of(self, percent: int) -> "Money":
+        """A signed percentage of this amount, rounded HALF_UP to the nearest
+        minor unit — never a float, never a truncation. ``percent`` may be
+        negative (a discount) or positive (a surcharge); halves round away
+        from zero in both directions (``0.5 -> 1``, ``-0.5 -> -1``), matching
+        ``Decimal``'s ``ROUND_HALF_UP``. This is the one sanctioned place
+        percentage math touches a ``Money`` value — pricing adjustments
+        (overrides, modifiers) must go through here, never re-derive their
+        own rounding.
+        """
+        if not isinstance(percent, int) or isinstance(percent, bool):
+            raise InvalidMoney(
+                f"percentage_of expects an int percent, got {percent!r}."
+            )
+        exact = (Decimal(self.amount) * Decimal(percent)) / Decimal(100)
+        rounded = int(exact.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        return Money(rounded, self.currency)

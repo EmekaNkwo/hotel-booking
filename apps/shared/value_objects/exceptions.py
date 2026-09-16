@@ -67,6 +67,15 @@ class InvalidId(ValueObjectError):
     """A value cannot form a typed id (non-int, or negative)."""
 
 
+class InvalidGuestName(ValueObjectError):
+    """A value cannot form a valid GuestName (non-string part, or no given name)."""
+
+
+class InvalidPriceBreakdown(ValueObjectError):
+    """A value cannot form a valid PriceBreakdown (currency mismatch, negative
+    amount, or a subtotal that does not match the sum of nightly totals)."""
+
+
 class CurrencyMismatch(ValueObjectError):
     """Arithmetic between two Moneys of different currencies.
 

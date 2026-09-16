@@ -36,6 +36,7 @@ THIRD_PARTY_APPS = [
     "rest_framework",
     "drf_spectacular",
     "django_filters",
+    "django.contrib.postgres",  # CITEXT extension/registration (M5, Postgres-only)
 ]
 
 LOCAL_APPS = [
@@ -44,6 +45,9 @@ LOCAL_APPS = [
     "apps.tenants",    # Tenancy: the platform-scoped tenant root + lifecycle (M2)
     "apps.properties", # Property: tenant-scoped property hierarchy (M3)
     "apps.rooms",      # Rooms: tenant-scoped room catalog + state machine (M3)
+    "apps.policies",   # Policy Engine: versioned business rules as data (M4)
+    "apps.guests",     # Guest Profile: identity resolution, consent, GDPR erasure (M5)
+    "apps.pricing",    # Pricing: rate plans, overrides, modifiers, PriceBreakdown (M6)
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

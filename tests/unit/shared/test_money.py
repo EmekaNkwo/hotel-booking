@@ -104,6 +104,18 @@ class TestBusinessOperations:
         assert original == Money(100, NGN)  # operands are never mutated
         assert result is not original
 
+    def test_percentage_of_exact_division(self):
+        assert Money(200, NGN).percentage_of(50) == Money(100, NGN)
+
+    def test_percentage_of_negative_percent_is_a_discount(self):
+        assert Money(200, NGN).percentage_of(-10) == Money(-20, NGN)
+
+    def test_percentage_of_zero_percent_is_zero(self):
+        assert Money(200, NGN).percentage_of(0) == Money(0, NGN)
+
+    def test_percentage_of_preserves_currency(self):
+        assert Money(200, USD).percentage_of(10).currency == USD
+
 
 class TestEdgeCases:
     def test_mixed_currency_addition_raises_with_context(self):
@@ -135,3 +147,24 @@ class TestEdgeCases:
     def test_error_message_names_both_currencies(self):
         with pytest.raises(CurrencyMismatch, match="NGN.*USD"):
             Money(100, NGN) + Money(100, USD)
+
+    @pytest.mark.parametrize(
+        ("amount", "percent", "expected"),
+        [
+            (1, 50, 1),  # 0.5 -> rounds up (away from zero)
+            (3, 50, 2),  # 1.5 -> rounds up
+            (-1, 50, -1),  # -0.5 -> rounds away from zero, i.e. down
+            (1, -50, -1),  # -0.5 -> rounds away from zero
+            (5, 10, 1),  # 0.5 -> rounds up
+        ],
+    )
+    def test_percentage_of_rounds_half_up_away_from_zero(self, amount, percent, expected):
+        assert Money(amount, NGN).percentage_of(percent) == Money(expected, NGN)
+
+    def test_percentage_of_rejects_a_float_percent(self):
+        with pytest.raises(InvalidMoney):
+            Money(100, NGN).percentage_of(12.5)
+
+    def test_percentage_of_rejects_a_bool_percent(self):
+        with pytest.raises(InvalidMoney):
+            Money(100, NGN).percentage_of(True)
