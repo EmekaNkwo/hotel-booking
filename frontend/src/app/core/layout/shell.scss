@@ -1,0 +1,87 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 0 0 auto;
+}
+
+.brand {
+  font-weight: 500;
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  // Lets the toolbar shrink this instead of forcing the whole page wider —
+  // found via real 375px viewport testing, where the un-truncated brand
+  // text plus the tenant select pushed `<body>` itself into horizontal
+  // overflow (a flex item's default min-width is its content size, not 0).
+  min-width: 0;
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+.tenant-select {
+  width: 220px;
+  color: inherit;
+  flex-shrink: 0;
+
+  ::ng-deep .mat-mdc-select-value,
+  ::ng-deep .mat-mdc-select-arrow {
+    color: inherit;
+  }
+
+  @media (max-width: 599px) {
+    width: 130px;
+  }
+}
+
+.tenant-role {
+  color: var(--mat-sys-on-surface-variant);
+  font-size: 0.85em;
+}
+
+.user-email {
+  opacity: 0.7;
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.body {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 240px;
+}
+
+.active-link {
+  background-color: var(--mat-sys-secondary-container);
+}
+
+.content {
+  padding: 1.5rem;
+}
+
+.tenant-gate {
+  max-width: 40ch;
+
+  h2 {
+    font: var(--mat-sys-title-medium);
+    margin: 0 0 0.5rem;
+  }
+
+  p {
+    font: var(--mat-sys-body-medium);
+    color: var(--mat-sys-on-surface-variant);
+    margin: 0;
+  }
+}

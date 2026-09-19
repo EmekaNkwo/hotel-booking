@@ -1,0 +1,66 @@
+<div class="guest-search">
+  <form [formGroup]="searchForm" (ngSubmit)="search()" class="search-row">
+    <mat-form-field appearance="outline" class="search-field">
+      <mat-label>Search guests (email or phone)</mat-label>
+      <input matInput formControlName="q" placeholder="jane@example.com" />
+    </mat-form-field>
+    <button mat-stroked-button type="submit" [disabled]="searchDisabled()">Search</button>
+  </form>
+
+  @if (store.loading()) {
+    <mat-progress-spinner diameter="24" mode="indeterminate" />
+  }
+
+  @if (store.error(); as error) {
+    <p class="guest-error" role="alert">{{ error.message }}</p>
+  }
+
+  @if (store.selectedGuest(); as selected) {
+    <div class="selected-guest">
+      <mat-icon>check_circle</mat-icon>
+      <span>
+        Selected: {{ selected.name?.display_name || selected.primary_email || selected.primary_phone }}
+      </span>
+      <button mat-button type="button" (click)="store.clearSelection()">Change</button>
+    </div>
+  } @else {
+    @if (store.searchResults().length > 0) {
+      <mat-nav-list class="results-list" dense>
+        @for (guest of store.searchResults(); track guest.id) {
+          <button mat-list-item type="button" (click)="select(guest)">
+            <span matListItemTitle>{{ guest.name?.display_name || 'Unnamed guest' }}</span>
+            <span matListItemLine>{{ guest.primary_email || guest.primary_phone || '—' }}</span>
+          </button>
+        }
+      </mat-nav-list>
+    }
+
+    <button mat-button type="button" (click)="toggleCreateForm()">
+      {{ showCreateForm() ? 'Cancel' : 'New guest' }}
+    </button>
+
+    @if (showCreateForm()) {
+      <form [formGroup]="createForm" (ngSubmit)="createGuest()" class="create-form">
+        <mat-form-field appearance="outline">
+          <mat-label>Email</mat-label>
+          <input matInput type="email" formControlName="email" />
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Phone</mat-label>
+          <input matInput formControlName="phone" />
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Given name</mat-label>
+          <input matInput formControlName="given_name" />
+        </mat-form-field>
+        <mat-form-field appearance="outline">
+          <mat-label>Family name</mat-label>
+          <input matInput formControlName="family_name" />
+        </mat-form-field>
+        <button mat-flat-button color="primary" type="submit" [disabled]="createDisabled()">
+          Create guest
+        </button>
+      </form>
+    }
+  }
+</div>

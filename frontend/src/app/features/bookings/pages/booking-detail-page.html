@@ -1,0 +1,138 @@
+<div class="detail-page">
+  @if (store.loading() && !store.current()) {
+    <p>Loading…</p>
+  } @else if (store.current(); as booking) {
+    <div class="page-header">
+      <h1>{{ booking.booking_ref }}</h1>
+      <span class="status">{{ booking.aggregate_status }}</span>
+    </div>
+
+    <dl class="facts">
+      <dt>Reservation</dt>
+      <dd>
+        @if (booking.reservation_id) {
+          <a [routerLink]="['/reservations', booking.reservation_id]">{{ booking.reservation_id }}</a>
+        } @else {
+          —
+        }
+      </dd>
+      <dt>Stay</dt>
+      <dd>{{ booking.arrival_date }} → {{ booking.departure_date }}</dd>
+      <dt>Total</dt>
+      <dd>{{ booking.total_minor_units / 100 }} {{ booking.currency }}</dd>
+      <dt>Created</dt>
+      <dd>{{ booking.created_at }}</dd>
+    </dl>
+
+    <h2>Guest (at confirmation time)</h2>
+    <dl class="facts">
+      <dt>Name</dt>
+      <dd>{{ booking.guest_snapshot.name?.['display_name'] ?? '—' }}</dd>
+      <dt>Email</dt>
+      <dd>{{ booking.guest_snapshot.email ?? '—' }}</dd>
+      <dt>Phone</dt>
+      <dd>{{ booking.guest_snapshot.phone ?? '—' }}</dd>
+    </dl>
+    <p class="snapshot-note">
+      This is a historical snapshot captured when the booking was confirmed — it is never
+      updated from the guest's current profile.
+    </p>
+
+    <h2>Lines</h2>
+    <table mat-table [dataSource]="booking.lines" class="lines-table">
+      <ng-container matColumnDef="room_type_id">
+        <th mat-header-cell *matHeaderCellDef>Room type</th>
+        <td mat-cell *matCellDef="let line">{{ line.room_type_id }}</td>
+      </ng-container>
+      <ng-container matColumnDef="arrival_date">
+        <th mat-header-cell *matHeaderCellDef>Arrival</th>
+        <td mat-cell *matCellDef="let line">{{ line.arrival_date }}</td>
+      </ng-container>
+      <ng-container matColumnDef="departure_date">
+        <th mat-header-cell *matHeaderCellDef>Departure</th>
+        <td mat-cell *matCellDef="let line">{{ line.departure_date }}</td>
+      </ng-container>
+      <ng-container matColumnDef="status">
+        <th mat-header-cell *matHeaderCellDef>Line status</th>
+        <td mat-cell *matCellDef="let line">{{ line.status }}</td>
+      </ng-container>
+      <ng-container matColumnDef="room">
+        <th mat-header-cell *matHeaderCellDef>Room</th>
+        <td mat-cell *matCellDef="let line">
+          {{ line.room_id ?? 'Unassigned' }}
+        </td>
+      </ng-container>
+      <ng-container matColumnDef="actions">
+        <th mat-header-cell *matHeaderCellDef></th>
+        <td mat-cell *matCellDef="let line">
+          @if (isAllocatable(line)) {
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="allocationStore.isLoading(line.id)"
+              (click)="allocate(line)"
+            >
+              Allocate
+            </button>
+          }
+          @if (isCheckoutEligible(line)) {
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="housekeepingStore.isCheckoutLoading(line.id)"
+              (click)="checkout(line)"
+            >
+              Check out
+            </button>
+          }
+        </td>
+      </ng-container>
+      <tr mat-header-row *matHeaderRowDef="lineColumns"></tr>
+      <tr mat-row *matRowDef="let row; columns: lineColumns"></tr>
+    </table>
+
+    @for (line of booking.lines; track line.id) {
+      @if (allocationStore.errorFor(line.id); as allocError) {
+        <div class="action-error" role="alert">
+          Line {{ line.line_no }}: {{ allocError.message }}
+        </div>
+      }
+      @if (housekeepingStore.checkoutErrorFor(line.id); as checkoutError) {
+        <div class="action-error" role="alert">
+          Line {{ line.line_no }}: {{ checkoutError.message }}
+        </div>
+      }
+      @if (createdTaskByLine()[line.id]; as task) {
+        <div class="action-info" role="status">
+          Line {{ line.line_no }}: checked out —
+          <a [routerLink]="['/housekeeping', task.id]">housekeeping task {{ task.id }}</a>
+          created.
+        </div>
+      }
+    }
+
+    @for (line of booking.lines; track line.id) {
+      @if (allocationStore.recordsByLine()[line.id]; as record) {
+        <div class="allocation-result">
+          <h3>Allocation for line {{ line.line_no }}</h3>
+          <dl class="facts">
+            <dt>Room</dt>
+            <dd>{{ record.room_id }}</dd>
+            <dt>Reason</dt>
+            <dd>{{ record.reason }}</dd>
+            <dt>Override</dt>
+            <dd>{{ record.override ? (record.override_reason || 'yes') : 'no' }}</dd>
+            <dt>Allocated at</dt>
+            <dd>{{ record.created_at }}</dd>
+          </dl>
+          <details>
+            <summary>Scoring detail (as returned by the backend)</summary>
+            <pre class="snapshot">{{ { criteria: record.criteria, scores: record.scores } | json }}</pre>
+          </details>
+        </div>
+      }
+    }
+  } @else if (store.error(); as error) {
+    <p class="form-error" role="alert">{{ error.message }}</p>
+  }
+</div>

@@ -1,0 +1,85 @@
+<div class="guests-page">
+  <div class="page-header">
+    <h1>Guests</h1>
+    <button mat-flat-button color="primary" type="button" (click)="toggleCreateForm()">
+      {{ showCreateForm() ? 'Cancel' : 'New guest' }}
+    </button>
+  </div>
+
+  @if (showCreateForm()) {
+    <form [formGroup]="createForm" (ngSubmit)="createGuest()" class="create-form">
+      <mat-form-field appearance="outline">
+        <mat-label>Email</mat-label>
+        <input matInput type="email" formControlName="email" />
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Phone</mat-label>
+        <input matInput formControlName="phone" />
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Given name</mat-label>
+        <input matInput formControlName="given_name" />
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Family name</mat-label>
+        <input matInput formControlName="family_name" />
+      </mat-form-field>
+      <button mat-flat-button color="primary" type="submit" [disabled]="createDisabled()">
+        Create guest
+      </button>
+    </form>
+  }
+
+  <form [formGroup]="searchForm" (ngSubmit)="search()" class="search-row">
+    <mat-form-field appearance="outline" class="search-field">
+      <mat-label>Search (email or phone)</mat-label>
+      <input matInput formControlName="q" placeholder="jane@example.com" />
+    </mat-form-field>
+    <button mat-stroked-button type="submit" [disabled]="searchDisabled()">Search</button>
+  </form>
+
+  @if (store.error(); as error) {
+    <p class="form-error" role="alert">{{ error.message }}</p>
+  }
+
+  @if (store.loading()) {
+    <p>Loading…</p>
+  } @else if (store.searchResults().length === 0) {
+    <app-empty-state title="No guests found" description="Try a different search, or create one." />
+  } @else {
+    <table mat-table [dataSource]="store.searchResults()" class="guests-table">
+      <ng-container matColumnDef="name">
+        <th mat-header-cell *matHeaderCellDef>Name</th>
+        <td mat-cell *matCellDef="let g">{{ g.name?.display_name || '—' }}</td>
+      </ng-container>
+      <ng-container matColumnDef="primary_email">
+        <th mat-header-cell *matHeaderCellDef>Email</th>
+        <td mat-cell *matCellDef="let g">{{ g.primary_email ?? '—' }}</td>
+      </ng-container>
+      <ng-container matColumnDef="primary_phone">
+        <th mat-header-cell *matHeaderCellDef>Phone</th>
+        <td mat-cell *matCellDef="let g">{{ g.primary_phone ?? '—' }}</td>
+      </ng-container>
+      <ng-container matColumnDef="status">
+        <th mat-header-cell *matHeaderCellDef>Status</th>
+        <td mat-cell *matCellDef="let g">{{ g.status }}</td>
+      </ng-container>
+      <ng-container matColumnDef="actions">
+        <th mat-header-cell *matHeaderCellDef></th>
+        <td mat-cell *matCellDef="let g">
+          <a mat-button [routerLink]="['/guests', g.id]">View</a>
+        </td>
+      </ng-container>
+      <tr mat-header-row *matHeaderRowDef="columns"></tr>
+      <tr mat-row *matRowDef="let row; columns: columns"></tr>
+    </table>
+    <app-pagination
+      [count]="store.count()"
+      [page]="store.currentPage()"
+      [hasNext]="store.hasNextPage()"
+      [hasPrevious]="store.hasPreviousPage()"
+      (next)="store.nextPage()"
+      (previous)="store.previousPage()"
+    />
+  }
+</div>

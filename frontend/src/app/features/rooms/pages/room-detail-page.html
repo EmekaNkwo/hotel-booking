@@ -1,0 +1,28 @@
+<div class="detail-page">
+  @if (store.detailLoading() && !store.current()) {
+    <p>Loading…</p>
+  } @else if (store.current(); as room) {
+    <div class="page-header">
+      <h1>{{ room.code }}</h1>
+      <app-room-status-badge [state]="room.operational_state" />
+    </div>
+
+    <dl class="facts">
+      <dt>Property</dt>
+      <dd>{{ room.property_id }}</dd>
+      <dt>Room type</dt>
+      <dd>{{ room.room_type.name }} ({{ room.room_type.code }})</dd>
+      <dt>Max occupancy</dt>
+      <dd>{{ room.room_type.max_occupancy }}</dd>
+      <dt>Current booking line</dt>
+      <dd>{{ room.current_booking_line_id ?? '—' }}</dd>
+    </dl>
+
+    @if (hasAttributes(room.room_type.attributes)) {
+      <h2>Room type attributes</h2>
+      <pre class="snapshot">{{ room.room_type.attributes | json }}</pre>
+    }
+  } @else if (store.detailError(); as error) {
+    <p class="form-error" role="alert">{{ error.message }}</p>
+  }
+</div>

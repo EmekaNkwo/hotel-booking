@@ -1,0 +1,59 @@
+.result-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 1px solid var(--mat-sys-outline-variant);
+  border-radius: 4px;
+  padding: 1rem;
+  max-width: 640px;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.status {
+  font-weight: 600;
+  padding: 0.15rem 0.6rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.status.available {
+  background-color: var(--mat-sys-tertiary-container);
+  color: var(--mat-sys-on-tertiary-container);
+}
+
+.status.unavailable {
+  background-color: var(--mat-sys-error-container);
+  color: var(--mat-sys-on-error-container);
+}
+
+.range {
+  color: var(--mat-sys-on-surface-variant);
+  font: var(--mat-sys-body-medium);
+}
+
+table {
+  width: 100%;
+}
+
+.zero-remaining {
+  color: var(--mat-sys-error);
+  font-weight: 600;
+}
+
+.total {
+  font-weight: 600;
+  margin: 0;
+}
+
+.price-error {
+  color: var(--mat-sys-error);
+  margin: 0;
+}

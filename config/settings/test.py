@@ -3,7 +3,19 @@
 Selected via DJANGO_SETTINGS_MODULE (set in pyproject's [tool.pytest.ini_options]).
 """
 
-from .base import *  # noqa: F403,F401
+import os
+
+# R1.3: base.py's own `SECRET_KEY = env("DJANGO_SECRET_KEY")` (no default,
+# by design — see its own comment) executes as part of `from .base import *`
+# below, BEFORE this module's own override on the next section ever runs.
+# In a clean environment (no .env, no exported var — e.g. a bare CI runner)
+# that import would raise ImproperlyConfigured before this file's
+# deterministic test secret ever takes effect. `setdefault` only fills the
+# gap when nothing is already set — a real DJANGO_SECRET_KEY from the
+# environment or .env is never overridden by this.
+os.environ.setdefault("DJANGO_SECRET_KEY", "test-secret-key")
+
+from .base import *  # noqa: F403,F401,E402
 
 DEBUG = False
 SECRET_KEY = "test-secret-key"

@@ -1,0 +1,19 @@
+.bookings-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+h1 {
+  font: var(--mat-sys-title-large);
+  margin: 0;
+}
+
+.bookings-table {
+  width: 100%;
+}
+
+.form-error {
+  color: var(--mat-sys-error);
+  margin: 0;
+}

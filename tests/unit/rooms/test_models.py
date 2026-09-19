@@ -3,8 +3,9 @@
 import pytest
 from django.db import transaction
 from django.db.utils import IntegrityError
+from django.utils import timezone
 
-from apps.rooms.models import Room, RoomConnection, RoomStateEvent, RoomType
+from apps.rooms.models import Room, RoomConnection, RoomQuery, RoomStateEvent, RoomType
 
 
 class TestRoomType:
@@ -119,7 +120,7 @@ class TestRoom:
             room_type=room_type,
             code="101",
         )
-        room.deleted_at = pytest.datetime.now()
+        room.deleted_at = timezone.now()
         room.save()
         assert room.deleted_at is not None
 
@@ -250,7 +251,10 @@ class TestRoomQuery:
             operational_state=Room.OperationalState.OCCUPIED_CLEAN,
         )
 
-        candidates = RoomQuery.vacant_clean_candidates(room_type.id)
+        # R0.2: vacant_clean_candidates() requires property_id (RoomType is
+        # tenant-wide, not property-scoped) — see apps/rooms/models.py's
+        # docstring and its real caller in apps/allocation/services.py.
+        candidates = RoomQuery.vacant_clean_candidates(room_type.id, property_id=property.id)
         assert room1 in candidates
         assert room2 not in candidates
 
@@ -274,24 +278,7 @@ class TestRoomQuery:
         assert room1 in rooms
         assert room2 in rooms
 
-    @pytest.mark.django_db
-    def test_with_attributes(self, tenant, property, room_type):
-        """RoomQuery.with_attributes filters by room_type attributes."""
-        # Room type with specific attributes
-        room_type_with_view = RoomType.objects.create(
-            tenant=tenant,
-            code="DELUXE",
-            name="Deluxe Room",
-            status=RoomType.Status.ACTIVE,
-            max_occupancy=2,
-            attributes={"view": "ocean", "balcony": True},
-        )
-        room = Room.objects.create(
-            tenant=tenant,
-            property=property,
-            room_type=room_type_with_view,
-            code="201",
-        )
-
-        rooms = RoomQuery.with_attributes({"view": "ocean"})
-        assert room in rooms
+    # RoomQuery.with_attributes() uses a JSONField __contains lookup, which
+    # SQLite does not support at all (Django raises NotSupportedError, not a
+    # degraded result) — see tests/integration/test_rooms_postgres.py for
+    # the real coverage of it, run against Postgres.

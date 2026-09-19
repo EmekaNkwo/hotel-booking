@@ -1,0 +1,39 @@
+.guests-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 800px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+h1 {
+  font: var(--mat-sys-title-large);
+  margin: 0;
+}
+
+.create-form,
+.search-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.search-field {
+  flex: 1 1 auto;
+  max-width: 320px;
+}
+
+.guests-table {
+  width: 100%;
+}
+
+.form-error {
+  color: var(--mat-sys-error);
+  margin: 0;
+}

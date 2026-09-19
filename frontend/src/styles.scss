@@ -1,0 +1,64 @@
+// Include theming for Angular Material with `mat.theme()`.
+// This Sass mixin will define CSS variables that are used for styling Angular Material
+// components according to the Material 3 design spec.
+// Learn more about theming and how to use it for your application's
+// custom components at https://material.angular.dev/guide/theming
+@use '@angular/material' as mat;
+
+html {
+  height: 100%;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$azure-palette,
+        tertiary: mat.$blue-palette,
+      ),
+      typography: Roboto,
+      density: 0,
+    )
+  );
+}
+
+// A floating form-field label (and its required-marker asterisk) must never
+// intercept clicks meant for the control underneath it — this is normally
+// handled by Material's own structural CSS, but a centered/unfocused label
+// on an empty required field was found (via real click testing, not just
+// visual inspection) to sit on top of the control's hit-test area, blocking
+// the very first click on some empty `mat-select` fields.
+.mdc-floating-label {
+  pointer-events: none !important;
+}
+
+// Dense data tables (reservations/bookings/guests/rooms/housekeeping/
+// notifications/dashboard) must never force the whole page to scroll
+// horizontally on a narrow viewport — found via real viewport testing at
+// 375px, where every `mat-table` was pushing `<body>` itself wider. Scoping
+// the horizontal scroll to the table keeps the sidebar/toolbar fixed and
+// lets each table's own columns overflow into a deliberate, contained
+// scroll area instead (`display: block` on `<table>` doesn't disturb its
+// row/cell descendants' table display values, so column alignment and
+// screen-reader table semantics are both preserved).
+table[mat-table] {
+  display: block;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+body {
+  // Default the application to a light color theme. This can be changed to
+  // `dark` to enable the dark color theme, or to `light dark` to defer to the
+  // user's system settings.
+  color-scheme: light;
+
+  // Set a default background, font and text colors for the application using
+  // Angular Material's system-level CSS variables. Learn more about these
+  // variables at https://material.angular.dev/guide/system-variables
+  background-color: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+
+  // Reset the user agent margin.
+  margin: 0;
+  height: 100%;
+}
+/* You can add global styles to this file, and also import other style files */

@@ -1,0 +1,108 @@
+<div class="login-page">
+  <mat-card class="login-card" appearance="outlined">
+    <mat-card-header>
+      <mat-card-title>Hospitality Management Platform</mat-card-title>
+      <mat-card-subtitle>
+        {{ mfaPending() ? 'Enter your authentication code' : 'Sign in to continue' }}
+      </mat-card-subtitle>
+    </mat-card-header>
+
+    <mat-card-content>
+      @if (error()) {
+        <div class="login-error" role="alert">{{ error()!.message }}</div>
+      }
+
+      @if (!mfaPending()) {
+        <form [formGroup]="credentialsForm" (ngSubmit)="submitCredentials()" novalidate>
+          <mat-form-field appearance="outline">
+            <mat-label>Email</mat-label>
+            <input
+              matInput
+              type="email"
+              formControlName="email"
+              autocomplete="username"
+              required
+            />
+            @if (credentialsForm.controls.email.hasError('required')) {
+              <mat-error>Email is required.</mat-error>
+            }
+            @if (credentialsForm.controls.email.hasError('email')) {
+              <mat-error>Enter a valid email address.</mat-error>
+            }
+          </mat-form-field>
+
+          <mat-form-field appearance="outline">
+            <mat-label>Password</mat-label>
+            <input
+              matInput
+              [type]="hidePassword() ? 'password' : 'text'"
+              formControlName="password"
+              autocomplete="current-password"
+              required
+            />
+            <button
+              mat-icon-button
+              matSuffix
+              type="button"
+              [attr.aria-label]="hidePassword() ? 'Show password' : 'Hide password'"
+              (click)="hidePassword.set(!hidePassword())"
+            >
+              <mat-icon>{{ hidePassword() ? 'visibility' : 'visibility_off' }}</mat-icon>
+            </button>
+            @if (credentialsForm.controls.password.hasError('required')) {
+              <mat-error>Password is required.</mat-error>
+            }
+          </mat-form-field>
+
+          <button
+            mat-flat-button
+            color="primary"
+            type="submit"
+            class="submit-button"
+            [disabled]="submitDisabled()"
+          >
+            @if (loading()) {
+              <mat-progress-spinner diameter="20" mode="indeterminate" />
+            } @else {
+              Sign in
+            }
+          </button>
+        </form>
+      } @else {
+        <form [formGroup]="mfaForm" (ngSubmit)="submitMfaCode()" novalidate>
+          <mat-form-field appearance="outline">
+            <mat-label>Authentication code</mat-label>
+            <input
+              matInput
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              formControlName="code"
+              maxlength="6"
+              required
+            />
+            @if (mfaForm.controls.code.hasError('required')) {
+              <mat-error>Enter the 6-digit code from your authenticator app.</mat-error>
+            }
+            @if (mfaForm.controls.code.hasError('pattern')) {
+              <mat-error>The code must be 6 digits.</mat-error>
+            }
+          </mat-form-field>
+
+          <button
+            mat-flat-button
+            color="primary"
+            type="submit"
+            class="submit-button"
+            [disabled]="mfaSubmitDisabled()"
+          >
+            @if (loading()) {
+              <mat-progress-spinner diameter="20" mode="indeterminate" />
+            } @else {
+              Verify
+            }
+          </button>
+        </form>
+      }
+    </mat-card-content>
+  </mat-card>
+</div>

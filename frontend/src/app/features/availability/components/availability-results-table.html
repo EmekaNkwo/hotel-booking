@@ -1,0 +1,46 @@
+<div class="result-panel">
+  <div class="result-header">
+    <span class="status" [class.available]="result().sellable" [class.unavailable]="!result().sellable">
+      {{ result().sellable ? 'Available' : 'Unavailable' }}
+    </span>
+    <span class="range">{{ result().start }} → {{ result().end }} · qty {{ result().quantity }}</span>
+    @if (result().sellable) {
+      <button mat-flat-button color="primary" type="button" (click)="reserve.emit()">
+        Start reservation
+      </button>
+    }
+  </div>
+
+  <table mat-table [dataSource]="nightRows()" class="night-table">
+    <ng-container matColumnDef="night">
+      <th mat-header-cell *matHeaderCellDef>Night</th>
+      <td mat-cell *matCellDef="let row">{{ row.night }}</td>
+    </ng-container>
+    <ng-container matColumnDef="remaining">
+      <th mat-header-cell *matHeaderCellDef>Remaining units</th>
+      <td mat-cell *matCellDef="let row" [class.zero-remaining]="row.remaining <= 0">
+        {{ row.remaining }}
+      </td>
+    </ng-container>
+    <tr mat-header-row *matHeaderRowDef="nightColumns"></tr>
+    <tr mat-row *matRowDef="let row; columns: nightColumns"></tr>
+  </table>
+
+  @if (result().price; as price) {
+    <table mat-table [dataSource]="price.nightly" class="price-table">
+      <ng-container matColumnDef="night">
+        <th mat-header-cell *matHeaderCellDef>Night</th>
+        <td mat-cell *matCellDef="let row">{{ row.night }}</td>
+      </ng-container>
+      <ng-container matColumnDef="price">
+        <th mat-header-cell *matHeaderCellDef>Rate</th>
+        <td mat-cell *matCellDef="let row">{{ formatMoney(row.total_minor_units, row.currency) }}</td>
+      </ng-container>
+      <tr mat-header-row *matHeaderRowDef="['night', 'price']"></tr>
+      <tr mat-row *matRowDef="let row; columns: ['night', 'price']"></tr>
+    </table>
+    <p class="total">Total: {{ formatMoney(price.total_minor_units, price.currency) }}</p>
+  } @else if (result().price_error) {
+    <p class="price-error">Pricing unavailable: {{ result().price_error }}</p>
+  }
+</div>

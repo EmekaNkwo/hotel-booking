@@ -1,0 +1,54 @@
+<div class="reservations-page">
+  <div class="page-header">
+    <h1>Reservations</h1>
+    <a mat-flat-button color="primary" routerLink="/reservations/new">New reservation</a>
+  </div>
+
+  @if (store.listError(); as error) {
+    <p class="form-error" role="alert">{{ error.message }}</p>
+  }
+
+  @if (store.listLoading()) {
+    <p>Loading…</p>
+  } @else if (store.list().length === 0) {
+    <app-empty-state
+      title="No reservations yet"
+      description="Search availability and start a reservation to see it here."
+    />
+  } @else {
+    <table mat-table [dataSource]="store.list()" class="reservations-table">
+      <ng-container matColumnDef="reservation_ref">
+        <th mat-header-cell *matHeaderCellDef>Reference</th>
+        <td mat-cell *matCellDef="let r">{{ r.reservation_ref }}</td>
+      </ng-container>
+      <ng-container matColumnDef="status">
+        <th mat-header-cell *matHeaderCellDef>Status</th>
+        <td mat-cell *matCellDef="let r">{{ r.status }}</td>
+      </ng-container>
+      <ng-container matColumnDef="property_id">
+        <th mat-header-cell *matHeaderCellDef>Property</th>
+        <td mat-cell *matCellDef="let r">{{ r.property_id }}</td>
+      </ng-container>
+      <ng-container matColumnDef="created_at">
+        <th mat-header-cell *matHeaderCellDef>Created</th>
+        <td mat-cell *matCellDef="let r">{{ r.created_at | date: 'short' }}</td>
+      </ng-container>
+      <ng-container matColumnDef="actions">
+        <th mat-header-cell *matHeaderCellDef></th>
+        <td mat-cell *matCellDef="let r">
+          <a mat-button [routerLink]="['/reservations', r.id]">View</a>
+        </td>
+      </ng-container>
+      <tr mat-header-row *matHeaderRowDef="columns"></tr>
+      <tr mat-row *matRowDef="let row; columns: columns"></tr>
+    </table>
+    <app-pagination
+      [count]="store.count()"
+      [page]="store.currentPage()"
+      [hasNext]="store.hasNextPage()"
+      [hasPrevious]="store.hasPreviousPage()"
+      (next)="store.nextPage()"
+      (previous)="store.previousPage()"
+    />
+  }
+</div>

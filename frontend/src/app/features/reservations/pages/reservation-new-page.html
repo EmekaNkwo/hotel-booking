@@ -1,0 +1,36 @@
+<div class="new-reservation-page">
+  <h1>New reservation</h1>
+
+  @if (selection(); as sel) {
+    <div class="stay-summary">
+      <span>{{ sel.start }} → {{ sel.end }}</span>
+      <span>Qty {{ sel.quantity }}</span>
+      <span>{{ sel.adults }} adult(s), {{ sel.children }} child(ren)</span>
+    </div>
+
+    <section>
+      <h2>Guest</h2>
+      <app-guest-search (guestSelected)="onGuestSelected($event)" />
+    </section>
+
+    @if (store.error(); as error) {
+      <p class="form-error" role="alert">{{ error.message }}</p>
+    }
+
+    <button
+      mat-flat-button
+      color="primary"
+      type="button"
+      [disabled]="!selectedGuest() || store.loading()"
+      (click)="submit()"
+    >
+      Create reservation
+    </button>
+  } @else {
+    <p>
+      No stay selected. Start from
+      <a routerLink="/availability">Availability search</a>
+      and choose an available result.
+    </p>
+  }
+</div>

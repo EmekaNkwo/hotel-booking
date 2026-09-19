@@ -1,0 +1,141 @@
+<div class="dashboard-page">
+  <div class="page-header">
+    <h1>Dashboard</h1>
+    <button mat-button type="button" (click)="refresh()">Refresh</button>
+  </div>
+
+  <div class="panel-grid">
+    <section class="panel">
+      <h2>Rooms</h2>
+      @if (store.rooms().loading) {
+        <p>Loading…</p>
+      } @else if (store.rooms().error; as error) {
+        <p class="form-error" role="alert">{{ error.message }}</p>
+      } @else if (store.rooms().data; as rooms) {
+        <dl class="counts">
+          <dt>Occupied</dt>
+          <dd>{{ store.occupiedRoomsCount() }}</dd>
+          <dt>Vacant clean</dt>
+          <dd>{{ store.roomStatusCounts().vacant_clean }}</dd>
+          <dt>Vacant dirty</dt>
+          <dd>{{ store.roomStatusCounts().vacant_dirty }}</dd>
+          <dt>Out of service / order</dt>
+          <dd>{{ store.roomStatusCounts().out_of_service + store.roomStatusCounts().out_of_order }}</dd>
+        </dl>
+        <a mat-button routerLink="/rooms">View rooms ({{ store.roomsCount() }})</a>
+      }
+    </section>
+
+    <section class="panel">
+      <h2>Housekeeping</h2>
+      @if (store.housekeepingTasks().loading) {
+        <p>Loading…</p>
+      } @else if (store.housekeepingTasks().error; as error) {
+        <p class="form-error" role="alert">{{ error.message }}</p>
+      } @else if (store.housekeepingTasks().data) {
+        <dl class="counts">
+          <dt>Planned</dt>
+          <dd>{{ store.housekeepingStatusCounts().planned }}</dd>
+          <dt>In progress</dt>
+          <dd>{{ store.housekeepingStatusCounts().in_progress }}</dd>
+          <dt>Quality check</dt>
+          <dd>{{ store.housekeepingStatusCounts().quality_check }}</dd>
+          <dt>Defect</dt>
+          <dd>{{ store.housekeepingStatusCounts().defect }}</dd>
+        </dl>
+        <a mat-button routerLink="/housekeeping">View housekeeping</a>
+      }
+    </section>
+
+    <section class="panel">
+      <h2>Reservations</h2>
+      @if (store.reservations().loading) {
+        <p>Loading…</p>
+      } @else if (store.reservations().error; as error) {
+        <p class="form-error" role="alert">{{ error.message }}</p>
+      } @else if (store.reservations().data) {
+        <dl class="counts">
+          <dt>Active (held / awaiting payment)</dt>
+          <dd>{{ store.activeReservationsCount() }}</dd>
+        </dl>
+        <a mat-button routerLink="/reservations">View reservations</a>
+      }
+    </section>
+
+    <section class="panel wide">
+      <h2>Recent bookings</h2>
+      @if (store.bookings().loading) {
+        <p>Loading…</p>
+      } @else if (store.bookings().error; as error) {
+        <p class="form-error" role="alert">{{ error.message }}</p>
+      } @else if (store.bookings().data) {
+        <dl class="counts">
+          <dt>Confirmed</dt>
+          <dd>{{ store.confirmedBookingsCount() }}</dd>
+          <dt>Arriving today</dt>
+          <dd>{{ store.arrivalsTodayCount() }}</dd>
+        </dl>
+        @if (store.recentBookings().length === 0) {
+          <p>No bookings yet.</p>
+        } @else {
+          <table class="mini-table">
+            <thead>
+              <tr>
+                <th>Ref</th>
+                <th>Status</th>
+                <th>Arrival</th>
+                <th>Departure</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (b of store.recentBookings(); track b.id) {
+                <tr>
+                  <td><a [routerLink]="['/bookings', b.id]">{{ b.booking_ref }}</a></td>
+                  <td>{{ b.aggregate_status }}</td>
+                  <td>{{ b.arrival_date }}</td>
+                  <td>{{ b.departure_date }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+        <a mat-button routerLink="/bookings">View bookings</a>
+      }
+    </section>
+
+    <section class="panel wide">
+      <h2>Notifications needing attention</h2>
+      @if (store.problemNotifications().loading) {
+        <p>Loading…</p>
+      } @else if (store.problemNotifications().error; as error) {
+        <p class="form-error" role="alert">{{ error.message }}</p>
+      } @else if (store.problemNotifications().data; as jobs) {
+        @if (jobs.length === 0) {
+          <p>No failed or dead-lettered notifications.</p>
+        } @else {
+          <table class="mini-table">
+            <thead>
+              <tr>
+                <th>Job</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (job of jobs.slice(0, 10); track job.id) {
+                <tr>
+                  <td><a [routerLink]="['/notifications', job.id]">{{ job.id }}</a></td>
+                  <td>{{ job.notification_type }}</td>
+                  <td><app-notification-status-badge [status]="job.status" /></td>
+                  <td>{{ job.created_at }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+        <a mat-button routerLink="/notifications">View all notifications</a>
+      }
+    </section>
+  </div>
+</div>

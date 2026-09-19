@@ -1,0 +1,88 @@
+<div class="detail-page">
+  @if (store.detailLoading() && !store.current()) {
+    <p>Loading…</p>
+  } @else if (store.current(); as task) {
+    <div class="page-header">
+      <h1>Task {{ task.id }}</h1>
+      <app-housekeeping-status-badge [status]="task.status" />
+    </div>
+
+    <dl class="facts">
+      <dt>Room</dt>
+      <dd>{{ task.room_id }}</dd>
+      <dt>Booking line</dt>
+      <dd>{{ task.booking_line_id }}</dd>
+      <dt>Kind</dt>
+      <dd>{{ task.task_kind }}</dd>
+      <dt>Business date</dt>
+      <dd>{{ task.business_date }}</dd>
+      <dt>Assignee</dt>
+      <dd>{{ task.assignee_id ?? 'Unassigned' }}</dd>
+      <dt>Created</dt>
+      <dd>{{ task.created_at }}</dd>
+    </dl>
+
+    @if (store.actionErrorFor(task.id); as error) {
+      <div class="action-error" role="alert">
+        <p>{{ error.message }}</p>
+        <button mat-button type="button" (click)="refresh()">Refresh</button>
+      </div>
+    }
+
+    <div class="actions">
+      @if (task.status === 'planned' || task.status === 'assigned') {
+        <button
+          mat-flat-button
+          color="primary"
+          type="button"
+          [disabled]="actionLoading()"
+          (click)="startCleaning()"
+        >
+          Start cleaning
+        </button>
+      }
+      @if (task.status === 'in_progress') {
+        <button
+          mat-flat-button
+          color="primary"
+          type="button"
+          [disabled]="actionLoading()"
+          (click)="completeCleaning()"
+        >
+          Complete cleaning
+        </button>
+      }
+      @if (task.status === 'quality_check') {
+        <button
+          mat-flat-button
+          color="primary"
+          type="button"
+          [disabled]="actionLoading()"
+          (click)="inspect('pass')"
+        >
+          Pass inspection
+        </button>
+        <button
+          mat-stroked-button
+          color="warn"
+          type="button"
+          [disabled]="actionLoading()"
+          (click)="inspect('fail')"
+        >
+          Fail inspection
+        </button>
+      }
+    </div>
+
+    @if (task.status === 'verified') {
+      <p class="info-note">Verified — the room has returned to vacant clean.</p>
+    }
+    @if (task.status === 'defect') {
+      <p class="info-note">
+        Failed inspection — the room has gone back to cleaning for another pass.
+      </p>
+    }
+  } @else if (store.detailError(); as error) {
+    <p class="form-error" role="alert">{{ error.message }}</p>
+  }
+</div>

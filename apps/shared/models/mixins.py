@@ -8,6 +8,7 @@ everywhere, instead of being re-declared (and drifting) on every table.
 from django.db import models
 
 from apps.shared.exceptions import AppendOnlyViolation, ConcurrencyError
+from apps.shared.workflows.context import is_workflow_active
 
 
 class TimeStampedMixin(models.Model):
@@ -165,3 +166,52 @@ class EntityMixin(TimeStampedMixin, TenantScopedMixin, VersionedMixin):
 
     class Meta:
         abstract = True
+
+
+class WorkflowStateGuardMixin(models.Model):
+    """Abstract base: rejects a ``save()`` that changes
+    ``workflow_guarded_field`` outside an active ``WorkflowRunner``
+    transition (R0.6 red-team finding).
+
+    ``apps.rooms.models.Room`` has enforced exactly this on
+    ``operational_state`` since M3 — every ``WorkflowRunner.run()`` call
+    already wraps its ``instance.save()`` in ``WorkflowContext()``
+    (``apps/shared/workflows/runner.py``), which is generic, not
+    Room-specific, so this mixin only generalizes Room's own already-proven
+    save() override rather than inventing a new mechanism. Without it, a
+    future bulk-update, admin action, or bugfix touching a WorkflowRunner-
+    governed status field (e.g. ``BookingLine.objects.filter(...).update(
+    status=...)`` or ``obj.status = X; obj.save()``) silently bypasses the
+    declared state machine, the audit log, and the outbox event — Room was
+    the only aggregate structurally protected against this class of bug.
+
+    Deliberately NOT applied to every status-like field in the codebase:
+    only fields that are actually governed by ``WorkflowRunner``-declared
+    (``@workflow_transition``) transitions belong here. ``BookingLine.status``
+    is a documented exception (M11 ruling S1) — a plain field, mutated
+    directly by design, with no declared transitions of its own; guarding
+    it here would fight its own architecture rather than protect it.
+    """
+
+    workflow_guarded_field: str = "status"
+
+    class Meta:
+        abstract = True
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_guarded_value = getattr(self, self.workflow_guarded_field, None)
+
+    def save(self, *args, **kwargs):
+        field = self.workflow_guarded_field
+        current = getattr(self, field)
+        changed = self.pk is not None and self._original_guarded_value != current
+        if changed and not is_workflow_active():
+            raise ValueError(
+                f"{type(self).__name__}.{field} changes must go through a "
+                f"WorkflowRunner transition. Attempted to change {field} from "
+                f"{self._original_guarded_value!r} to {current!r} without "
+                f"proper workflow context."
+            )
+        super().save(*args, **kwargs)
+        self._original_guarded_value = current

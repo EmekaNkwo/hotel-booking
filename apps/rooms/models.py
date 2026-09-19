@@ -416,10 +416,17 @@ class RoomQuery:
     """Selector for room allocation and reporting."""
 
     @staticmethod
-    def vacant_clean_candidates(room_type_id: int):
-        """Allocation hot path: Vacant Clean rooms of a given type."""
+    def vacant_clean_candidates(room_type_id: int, *, property_id: int):
+        """Allocation hot path: Vacant Clean rooms of a given type, AT THE
+        GIVEN PROPERTY (R0.2). ``RoomType`` is tenant-wide, not
+        property-scoped, so a multi-property tenant reusing a room-type
+        code/row across properties would otherwise let this return a room
+        belonging to a different property than the one the guest booked —
+        ``property_id`` is required, not optional, so no caller can
+        silently regress to the cross-property behavior."""
         return Room.objects.filter(
             room_type_id=room_type_id,
+            property_id=property_id,
             operational_state=Room.OperationalState.VACANT_CLEAN,
             deleted_at__isnull=True,
         ).select_related("property", "room_type")

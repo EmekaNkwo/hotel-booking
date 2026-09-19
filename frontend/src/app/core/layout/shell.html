@@ -1,0 +1,85 @@
+<div class="shell">
+  <mat-toolbar class="topbar" color="primary">
+    <button
+      mat-icon-button
+      class="menu-toggle"
+      type="button"
+      (click)="sidenav.toggle()"
+      aria-label="Toggle navigation"
+    >
+      <mat-icon>menu</mat-icon>
+    </button>
+
+    <span class="brand">Hospitality Management Platform</span>
+    <span class="spacer"></span>
+
+    @if (tenants().length > 0) {
+      <mat-select
+        class="tenant-select"
+        [value]="selectedTenantId()"
+        (selectionChange)="onSelectTenant($event.value)"
+        [attr.aria-label]="'Select tenant'"
+        panelClass="tenant-select-panel"
+      >
+        @for (tenant of tenants(); track tenant.tenant_id) {
+          <mat-option [value]="tenant.tenant_id">
+            {{ tenant.name }}
+            @if (tenant.role_names.length > 0) {
+              <span class="tenant-role"> · {{ tenant.role_names.join(', ') }}</span>
+            }
+          </mat-option>
+        }
+      </mat-select>
+    }
+
+    @if (currentUser(); as user) {
+      <button mat-icon-button [matMenuTriggerFor]="userMenu" aria-label="Account menu">
+        <mat-icon>account_circle</mat-icon>
+      </button>
+      <mat-menu #userMenu="matMenu">
+        <div class="user-email" mat-menu-item disabled>{{ user.email }}</div>
+        <mat-divider></mat-divider>
+        <button mat-menu-item (click)="logout()">
+          <mat-icon>logout</mat-icon>
+          <span>Log out</span>
+        </button>
+      </mat-menu>
+    }
+  </mat-toolbar>
+
+  <app-loading-indicator [loading]="loading()" />
+
+  <mat-sidenav-container class="body">
+    <mat-sidenav
+      #sidenav
+      class="sidebar"
+      [mode]="isHandset() ? 'over' : 'side'"
+      [opened]="!isHandset()"
+    >
+      <mat-nav-list>
+        @for (item of navItems; track item.path) {
+          <a
+            mat-list-item
+            [routerLink]="item.path"
+            routerLinkActive="active-link"
+            [routerLinkActiveOptions]="{ exact: false }"
+          >
+            <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
+            <span matListItemTitle>{{ item.label }}</span>
+          </a>
+        }
+      </mat-nav-list>
+    </mat-sidenav>
+
+    <mat-sidenav-content class="content">
+      @if (needsTenantSelection()) {
+        <div class="tenant-gate">
+          <h2>Select a tenant to continue</h2>
+          <p>You belong to more than one organization. Choose one above to proceed.</p>
+        </div>
+      } @else {
+        <router-outlet />
+      }
+    </mat-sidenav-content>
+  </mat-sidenav-container>
+</div>

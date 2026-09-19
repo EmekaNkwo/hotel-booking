@@ -1,0 +1,23 @@
+<div class="detail-page">
+  @if (store.detailLoading() && !store.current()) {
+    <p>Loading…</p>
+  } @else if (store.current(); as guest) {
+    <div class="page-header">
+      <h1>{{ guest.name?.display_name || 'Unnamed guest' }}</h1>
+      <span class="status">{{ guest.status }}</span>
+    </div>
+
+    <dl class="facts">
+      <dt>Email</dt>
+      <dd>{{ guest.primary_email ?? '—' }}</dd>
+      <dt>Phone</dt>
+      <dd>{{ guest.primary_phone ?? '—' }}</dd>
+      <dt>Language</dt>
+      <dd>{{ guest.language || '—' }}</dd>
+      <dt>Created</dt>
+      <dd>{{ guest.created_at }}</dd>
+    </dl>
+  } @else if (store.detailError(); as error) {
+    <p class="form-error" role="alert">{{ error.message }}</p>
+  }
+</div>

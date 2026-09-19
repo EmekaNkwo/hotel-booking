@@ -1,0 +1,70 @@
+<div class="availability-page">
+  <h1>Availability</h1>
+
+  <form [formGroup]="form" (ngSubmit)="search()" class="search-form">
+    <mat-form-field appearance="outline">
+      <mat-label>Property</mat-label>
+      <mat-select formControlName="property_id">
+        @for (property of store.properties(); track property.id) {
+          <mat-option [value]="property.id">{{ property.name }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Room type</mat-label>
+      <mat-select formControlName="room_type_id">
+        @for (roomType of store.roomTypes(); track roomType.id) {
+          <mat-option [value]="roomType.id">{{ roomType.name }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Check-in</mat-label>
+      <input matInput [matDatepicker]="checkInPicker" formControlName="start" />
+      <mat-datepicker-toggle matSuffix [for]="checkInPicker" />
+      <mat-datepicker #checkInPicker />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>Check-out</mat-label>
+      <input matInput [matDatepicker]="checkOutPicker" formControlName="end" />
+      <mat-datepicker-toggle matSuffix [for]="checkOutPicker" />
+      <mat-datepicker #checkOutPicker />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="narrow">
+      <mat-label>Quantity</mat-label>
+      <input matInput type="number" min="1" formControlName="quantity" />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="narrow">
+      <mat-label>Adults</mat-label>
+      <input matInput type="number" min="1" formControlName="adults" />
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="narrow">
+      <mat-label>Children</mat-label>
+      <input matInput type="number" min="0" formControlName="children" />
+    </mat-form-field>
+
+    <button mat-flat-button color="primary" type="submit" [disabled]="searchDisabled()">
+      Search
+    </button>
+  </form>
+
+  @if (dateRangeInvalid()) {
+    <p class="form-error">Check-out must be after check-in.</p>
+  }
+
+  @if (store.error(); as error) {
+    <p class="form-error" role="alert">{{ error.message }}</p>
+  }
+
+  @if (store.loading()) {
+    <p>Searching…</p>
+  } @else if (store.result(); as result) {
+    <app-availability-results-table [result]="result" (reserve)="startReservation()" />
+  }
+</div>

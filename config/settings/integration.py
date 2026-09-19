@@ -13,7 +13,14 @@ Migrations apply for real here — that is precisely what the tier verifies
 (the RLS migration, the regex constraints, the partial indexes).
 """
 
-from .base import *  # noqa: F403,F401
+import os
+
+# R1.3: same reasoning as config/settings/test.py — base.py's unconditional
+# `SECRET_KEY = env("DJANGO_SECRET_KEY")` must not crash this import in a
+# clean environment before this file's own deterministic override applies.
+os.environ.setdefault("DJANGO_SECRET_KEY", "integration-test-secret-key")
+
+from .base import *  # noqa: F403,F401,E402
 
 DEBUG = False
 SECRET_KEY = "integration-test-secret-key"

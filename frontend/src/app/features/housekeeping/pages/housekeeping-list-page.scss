@@ -1,0 +1,39 @@
+.housekeeping-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+h1 {
+  font: var(--mat-sys-title-large);
+  margin: 0;
+}
+
+.filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  column-gap: 0.75rem;
+  row-gap: 1.5rem;
+}
+
+.filter-form mat-form-field {
+  width: 160px;
+}
+
+.filter-form .narrow {
+  width: 120px;
+}
+
+.filter-form button[type='submit'] {
+  height: 56px;
+}
+
+.tasks-table {
+  width: 100%;
+}
+
+.form-error {
+  color: var(--mat-sys-error);
+  margin: 0;
+}

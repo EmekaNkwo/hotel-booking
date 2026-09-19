@@ -1,0 +1,41 @@
+<div class="detail-page">
+  @if (store.detailLoading() && !store.current()) {
+    <p>Loading…</p>
+  } @else if (store.current(); as job) {
+    <div class="page-header">
+      <h1>Job {{ job.id }}</h1>
+      <app-notification-status-badge [status]="job.status" />
+    </div>
+
+    <dl class="facts">
+      <dt>Type</dt>
+      <dd>{{ job.notification_type }}</dd>
+      <dt>Channel</dt>
+      <dd>{{ job.channel }}</dd>
+      <dt>Recipient</dt>
+      <dd>
+        @if (job.recipient_guest_id) {
+          <a [routerLink]="['/guests', job.recipient_guest_id]">Guest {{ job.recipient_guest_id }}</a>
+        } @else {
+          —
+        }
+      </dd>
+      <dt>Retry count</dt>
+      <dd>{{ job.retry_count }}</dd>
+      <dt>Created</dt>
+      <dd>{{ job.created_at }}</dd>
+    </dl>
+
+    @if (job.status === 'failed' || job.status === 'dead_lettered') {
+      <div class="failure-box" [class.dead-lettered]="job.status === 'dead_lettered'">
+        <h2>{{ job.status === 'dead_lettered' ? 'Dead-lettered' : 'Failed' }}</h2>
+        <p>{{ job.last_error || 'No error message recorded.' }}</p>
+      </div>
+    }
+
+    <h2>Context</h2>
+    <pre class="snapshot">{{ job.context | json }}</pre>
+  } @else if (store.detailError(); as error) {
+    <p class="form-error" role="alert">{{ error.message }}</p>
+  }
+</div>

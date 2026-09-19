@@ -1,0 +1,76 @@
+<div class="housekeeping-page">
+  <h1>Housekeeping</h1>
+
+  <form [formGroup]="filterForm" (ngSubmit)="applyFilters()" class="filter-form">
+    <mat-form-field appearance="outline">
+      <mat-label>Status</mat-label>
+      <mat-select formControlName="status">
+        <mat-option [value]="null">All</mat-option>
+        @for (status of taskStatuses; track status) {
+          <mat-option [value]="status">{{ status }}</mat-option>
+        }
+      </mat-select>
+    </mat-form-field>
+
+    <mat-form-field appearance="outline" class="narrow">
+      <mat-label>Room ID</mat-label>
+      <input matInput type="number" formControlName="room_id" />
+    </mat-form-field>
+
+    <button mat-flat-button color="primary" type="submit">Apply</button>
+    @if (hasActiveFilters()) {
+      <button mat-button type="button" (click)="clearFilters()">Clear</button>
+    }
+  </form>
+
+  @if (store.listError(); as error) {
+    <p class="form-error" role="alert">{{ error.message }}</p>
+  }
+
+  @if (store.listLoading()) {
+    <p>Loading…</p>
+  } @else if (store.tasks().length === 0) {
+    <app-empty-state title="No housekeeping tasks found" description="Check out a room to create one." />
+  } @else {
+    <table mat-table [dataSource]="store.tasks()" class="tasks-table">
+      <ng-container matColumnDef="id">
+        <th mat-header-cell *matHeaderCellDef>Task</th>
+        <td mat-cell *matCellDef="let t">{{ t.id }}</td>
+      </ng-container>
+      <ng-container matColumnDef="room_id">
+        <th mat-header-cell *matHeaderCellDef>Room</th>
+        <td mat-cell *matCellDef="let t">{{ t.room_id }}</td>
+      </ng-container>
+      <ng-container matColumnDef="task_kind">
+        <th mat-header-cell *matHeaderCellDef>Kind</th>
+        <td mat-cell *matCellDef="let t">{{ t.task_kind }}</td>
+      </ng-container>
+      <ng-container matColumnDef="status">
+        <th mat-header-cell *matHeaderCellDef>Status</th>
+        <td mat-cell *matCellDef="let t">
+          <app-housekeeping-status-badge [status]="t.status" />
+        </td>
+      </ng-container>
+      <ng-container matColumnDef="business_date">
+        <th mat-header-cell *matHeaderCellDef>Business date</th>
+        <td mat-cell *matCellDef="let t">{{ t.business_date }}</td>
+      </ng-container>
+      <ng-container matColumnDef="actions">
+        <th mat-header-cell *matHeaderCellDef></th>
+        <td mat-cell *matCellDef="let t">
+          <a mat-button [routerLink]="['/housekeeping', t.id]">View</a>
+        </td>
+      </ng-container>
+      <tr mat-header-row *matHeaderRowDef="columns"></tr>
+      <tr mat-row *matRowDef="let row; columns: columns"></tr>
+    </table>
+    <app-pagination
+      [count]="store.count()"
+      [page]="store.currentPage()"
+      [hasNext]="store.hasNextPage()"
+      [hasPrevious]="store.hasPreviousPage()"
+      (next)="store.nextPage()"
+      (previous)="store.previousPage()"
+    />
+  }
+</div>
